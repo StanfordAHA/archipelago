@@ -921,6 +921,7 @@ def pipeline_pnr(
     pipeline_config_interval,
     pes_with_packed_ponds,
     sparse,
+    west_in_io_sides,
 ):
     if load_only:
         packed_file = os.path.join(app_dir, "design.packed")
@@ -958,7 +959,7 @@ def pipeline_pnr(
     )
 
     print("\nApplication Frequency:")
-    curr_freq, crit_path, crit_nets = sta(graph)
+    curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
 
     update_kernel_latencies(
         app_dir,
@@ -1002,7 +1003,7 @@ def pipeline_pnr(
                 )
 
                 print("\nIteration", itr + 1, "frequency")
-                curr_freq, crit_path, crit_nets = sta(graph)
+                curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
             except:
                 max_itr = itr
             itr += 1
@@ -1040,7 +1041,7 @@ def pipeline_pnr(
         )
 
         for _ in range(max_itr):
-            curr_freq, crit_path, crit_nets = sta(graph)
+            curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
             break_crit_path(graph, id_to_name, crit_path, placement, routing)
 
         update_kernel_latencies(
@@ -1057,7 +1058,7 @@ def pipeline_pnr(
             sparse,
         )
         print("\nFinal application frequency:")
-        curr_freq, crit_path, crit_nets = sta(graph)
+        curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
 
         if max_itr == 0:
             print(bcolors.WARNING + "\nCouldn't break any paths" + bcolors.ENDC)
@@ -1070,7 +1071,7 @@ def pipeline_pnr(
     elif "EXHAUSTIVE_PIPE" in os.environ:
         starting_regs = graph.added_regs
         exhaustive_pipe(graph, id_to_name, placement, routing)
-        curr_freq, crit_path, crit_nets = sta(graph)
+        curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
         print(
             "\nAdded", graph.added_regs - starting_regs, "registers to routing graph\n"
         )

@@ -16,6 +16,7 @@ from archipelago.pnr_graph import (
     RouteNode,
 )
 from archipelago.visualize import visualize_pnr
+from canal.util import IOSide
 
 
 class PathComponents:
@@ -223,10 +224,8 @@ def calc_fifo_to_out(graph, node, parent, comp, mem_tile_column, mem_col_index_i
         comp.sb_delay_rv.append(comp.delays[f"ready_and_valid_{tile_suffix}"])
 
 
-# Matrix unit hack: 
-#TODO: Parametrize this and make it default false later 
-def sta(graph, using_matrix_unit=True):
-    mem_col_index_increment = 0 if using_matrix_unit else 1 
+def sta(graph, west_in_io_sides):
+    mem_col_index_increment = 0 if west_in_io_sides else 1 
     mem_tile_column = get_mem_tile_columns(graph, mem_col_index_increment)
     nodes = graph.topological_sort()
     timing_info = {}
@@ -376,7 +375,7 @@ def parse_args():
     return netlist, placement, route, id_to_name_filename, args.visualize, args.sparse
 
 
-def run_sta(packed_file, placement_file, routing_file, id_to_name, sparse):
+def run_sta(packed_file, placement_file, routing_file, id_to_name, sparse, west_in_io_sides):
     netlist, buses = pythunder.io.load_netlist(packed_file)
     placement = load_placement(placement_file)
     routing = load_routing_result(routing_file)
@@ -395,7 +394,7 @@ def run_sta(packed_file, placement_file, routing_file, id_to_name, sparse):
         placement, routing, id_to_name, netlist, pe_latency, 0, io_cycles, sparse
     )
 
-    clock_speed, crit_path, crit_nodes = sta(routing_result_graph)
+    clock_speed, crit_path, crit_nodes = sta(routing_result_graph, west_in_io_sides)
 
     return clock_speed
 
