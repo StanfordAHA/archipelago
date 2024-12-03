@@ -11,7 +11,8 @@ import pythunder
 from archipelago.pipeline import pipeline_pnr
 from .sta import sta, run_sta
 from .pnr_graph import construct_graph
-
+from canal.util import IOSide
+from typing import List
 
 class PnRException(Exception):
     def __init__(self):
@@ -37,6 +38,7 @@ def pnr(
     pipeline_config_interval=0,
     pes_with_packed_ponds=None,
     sparse=False,
+    west_in_io_sides=False,
 ):
     if input_netlist is None and len(packed_file):
         raise ValueError("Invalid input")
@@ -190,6 +192,7 @@ def pnr(
                         pipeline_config_interval,
                         pes_with_packed_ponds,
                         sparse,
+                        west_in_io_sides,
                     )
                     freq = run_sta(
                         packed_file,
@@ -197,6 +200,7 @@ def pnr(
                         route_filename,
                         id_to_name,
                         sparse,
+                        west_in_io_sides,
                     )
                     if freq > max_freq:
                         max_freq = freq
@@ -301,6 +305,7 @@ def pnr(
             pipeline_config_interval,
             pes_with_packed_ponds,
             sparse,
+            west_in_io_sides,
         )
         packed_file = dump_packed_result(
             app_name, cwd, input_netlist, id_to_name, copy_to_dir=copy_to_dir

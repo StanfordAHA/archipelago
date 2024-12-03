@@ -16,6 +16,7 @@ from archipelago.pnr_graph import (
     RouteNode,
 )
 from archipelago.visualize import visualize_pnr
+from canal.util import IOSide
 
 
 class PathComponents:
@@ -73,16 +74,16 @@ class PathComponents:
         print("\t\tSB clk delay:", self.sb_clk_delay, "ps")
 
 
-def get_mem_tile_columns(graph):
+def get_mem_tile_columns(graph, mem_col_index_increment):
     mem_column = 4
     for mem in graph.get_mems():
-        if (mem.x + 1) % mem_column != 0:
+        if (mem.x + mem_col_index_increment) % mem_column != 0:
             raise ValueError("MEM tile not at expected column, please update me")
 
     return mem_column
 
 
-def calc_sb_delay(graph, node, parent, comp, mem_column, sparse):
+def calc_sb_delay(graph, node, parent, comp, mem_column, sparse, mem_col_index_increment):
     # Need to associate each sb hop with these catagories:
     # mem2pe_clk
     # pe2mem_clk
@@ -126,12 +127,12 @@ def calc_sb_delay(graph, node, parent, comp, mem_column, sparse):
             return
         assert next_sb.io == 1
         source_mem = False
-        if (source_x + 1) % mem_column == 0:
+        if (source_x + mem_col_index_increment) % mem_column == 0:
             # Starting at mem column
             source_mem = True
 
         dest_mem = False
-        if (next_sb.x + 1) % mem_column == 0:
+        if (next_sb.x + mem_col_index_increment) % mem_column == 0:
             # Starting at mem column
             dest_mem = True
 
@@ -153,7 +154,7 @@ def calc_sb_delay(graph, node, parent, comp, mem_column, sparse):
 
         side_to_dir = {0: "EAST", 1: "SOUTH", 2: "WEST", 3: "NORTH"}
 
-        if (parent.x + 1) % mem_column == 0:
+        if (parent.x + mem_col_index_increment) % mem_column == 0:
             comp.sb_delay.append(
                 comp.delays[
                     f"MEM_B{parent.bit_width}_{side_to_dir[parent.side]}_{side_to_dir[next_sb.side]}"
@@ -167,7 +168,7 @@ def calc_sb_delay(graph, node, parent, comp, mem_column, sparse):
             )
 
         if sparse:
-            if (parent.x + 1) % mem_column == 0:
+            if (parent.x + mem_col_index_increment) % mem_column == 0:
                 comp.sb_delay_rv.append(
                     comp.delays[
                         f"MEM_B{parent.bit_width}_valid_{side_to_dir[parent.side]}_{side_to_dir[next_sb.side]}"
@@ -180,7 +181,7 @@ def calc_sb_delay(graph, node, parent, comp, mem_column, sparse):
                     ]
                 )
 
-            if (parent.x + 1) % mem_column == 0:
+            if (parent.x + mem_col_index_increment) % mem_column == 0:
                 comp.sb_delay_rv.append(
                     comp.delays[
                         f"MEM_B{parent.bit_width}_ready_{side_to_dir[next_sb.side]}_{side_to_dir[parent.side]}"
@@ -194,14 +195,14 @@ def calc_sb_delay(graph, node, parent, comp, mem_column, sparse):
                 )
 
 
-def calc_fifo_to_out(graph, node, parent, comp, mem_tile_column):
+def calc_fifo_to_out(graph, node, parent, comp, mem_tile_column, mem_col_index_increment):
     assert graph.sparse
 
     if not (
         isinstance(graph.sources[parent][0], RouteNode)
         and graph.sources[parent][0].route_type == RouteType.SB
     ):
-        if (node.x + 1) % mem_tile_column == 0:
+        if (node.x + mem_col_index_increment) % mem_tile_column == 0:
             tile_suffix = "mem"
         else:
             tile_suffix = "pe"
@@ -223,8 +224,9 @@ def calc_fifo_to_out(graph, node, parent, comp, mem_tile_column):
         comp.sb_delay_rv.append(comp.delays[f"ready_and_valid_{tile_suffix}"])
 
 
-def sta(graph):
-    mem_tile_column = get_mem_tile_columns(graph)
+def sta(graph, west_in_io_sides):
+    mem_col_index_increment = 0 if west_in_io_sides else 1 
+    mem_tile_column = get_mem_tile_columns(graph, mem_col_index_increment)
     nodes = graph.topological_sort()
     timing_info = {}
 
@@ -264,12 +266,12 @@ def sta(graph):
 
                 elif node.route_type == RouteType.SB:
                     calc_sb_delay(
-                        graph, node, parent, comp, mem_tile_column, graph.sparse
+                        graph, node, parent, comp, mem_tile_column, graph.sparse, mem_col_index_increment
                     )
 
                 elif node.route_type == RouteType.RMUX:
                     if graph.sparse:
-                        calc_fifo_to_out(graph, node, parent, comp, mem_tile_column)
+                        calc_fifo_to_out(graph, node, parent, comp, mem_tile_column, mem_col_index_increment)
                     else:
                         # Make sure to check this later, not sure if we only want to count rmux when reg is used
                         if (
@@ -373,7 +375,7 @@ def parse_args():
     return netlist, placement, route, id_to_name_filename, args.visualize, args.sparse
 
 
-def run_sta(packed_file, placement_file, routing_file, id_to_name, sparse):
+def run_sta(packed_file, placement_file, routing_file, id_to_name, sparse, west_in_io_sides):
     netlist, buses = pythunder.io.load_netlist(packed_file)
     placement = load_placement(placement_file)
     routing = load_routing_result(routing_file)
@@ -392,7 +394,7 @@ def run_sta(packed_file, placement_file, routing_file, id_to_name, sparse):
         placement, routing, id_to_name, netlist, pe_latency, 0, io_cycles, sparse
     )
 
-    clock_speed, crit_path, crit_nodes = sta(routing_result_graph)
+    clock_speed, crit_path, crit_nodes = sta(routing_result_graph, west_in_io_sides)
 
     return clock_speed
 
