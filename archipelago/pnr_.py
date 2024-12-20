@@ -180,6 +180,7 @@ def pnr(
                 if routed:
                     placement_result = pycyclone.io.load_placement(placement_filename)
                     routing_result = load_routing_result(route_filename)
+                    breakpoint()
                     placement_result, routing_result, id_to_name = pipeline_pnr(
                         cwd,
                         placement_result,
@@ -256,6 +257,16 @@ def pnr(
                     "Trying placement with PnR placer exp:",
                     os.environ["PNR_PLACER_EXP"],
                 )
+                #breakpoint()
+                # MO: DRV HACK for pointwise 
+                drv_hack = False  
+                if (drv_hack):
+                    print("MO: DRV placement hack")
+                    print(f"CWD: {cwd}")
+                    hardcoded_packed_file_path = os.path.join(cwd, "../hardcoded_bin/design.packed")
+                    os.system(f"rm {packed_file}")
+                    os.system(f"cp {hardcoded_packed_file_path} {packed_file}")
+
                 place(packed_file, layout_filename, placement_filename, has_fixed)
                 if not os.path.isfile(placement_filename):
                     raise PnRException()
