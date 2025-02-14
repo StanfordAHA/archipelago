@@ -105,6 +105,7 @@ class TileType(Enum):
     POND = 4
     IO16 = 5
     IO1 = 6
+    MUIO16 = 7
 
 
 class TileNode:
@@ -126,6 +127,8 @@ class TileNode:
             self.tile_type = TileType.IO16
         elif self.tile_id[0] == "i":
             self.tile_type = TileType.IO1
+        elif self.tile_id[0] == "U":
+            self.tile_type = TileType.IO16
 
         self.kernel = kernel
 
