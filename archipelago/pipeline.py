@@ -635,7 +635,10 @@ def flush_cycles(
                 curr_node = parent_node
                 parent_node = graph.sources[parent_node][0]
 
-    max_flush_cycles = max(flush_cycles.values())
+    if flush_cycles == {}:
+        max_flush_cycles = 0
+    else:
+        max_flush_cycles = max(flush_cycles.values())
     for mem, flush_c in flush_cycles.items():
         flush_cycles[mem] = max_flush_cycles - flush_c
 
