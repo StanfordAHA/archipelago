@@ -583,7 +583,7 @@ class RoutingResultGraph:
         node.reg_name = reg_name
         self.add_node(node)
 
-        self.id_to_name[node.tile_id] = f"pnr_pipelining{self.added_regs}"
+        self.id_to_name[node.tile_id] = f"pnr_pipelining_{self.added_regs}@{reg_name}"
 
         self.added_regs += 1
 
@@ -692,6 +692,8 @@ class RoutingResultGraph:
                             resolved = True
                             node.tile_id = net[0][0]
                             node.kernel = self.id_to_name[node.tile_id].split("$")[0]
+                            # Add reg name to include track information
+                            self.id_to_name[node.tile_id] = self.id_to_name[node.tile_id] + "@" + node.reg_name
                             seen_regs = []
 
             if not resolved:

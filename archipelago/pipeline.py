@@ -138,7 +138,7 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
 
     reg_into_route(routes, break_node_source, new_reg_route_source)
     placement[new_reg_tile.tile_id] = (new_reg_tile.x, new_reg_tile.y)
-    id_to_name[new_reg_tile.tile_id] = f"pnr_pipelining{graph.added_regs}"
+    id_to_name[new_reg_tile.tile_id] = f"pnr_pipelining_{graph.added_regs}@T{track}_{dir_map[side]}"
 
     graph.update_sources_and_sinks()
     graph.update_edge_kernels()
@@ -188,7 +188,7 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
 
         reg_into_route(routes, break_node_source, new_reg_route_source)
         placement[new_reg_tile.tile_id] = (new_reg_tile.x, new_reg_tile.y)
-        id_to_name[new_reg_tile.tile_id] = f"pnr_pipelining{graph.added_regs}"
+        id_to_name[new_reg_tile.tile_id] = f"pnr_pipelining_{graph.added_regs}@T{track}_{dir_map[side]}"
 
         graph.update_sources_and_sinks()
         graph.update_edge_kernels()
@@ -448,10 +448,11 @@ def branch_delay_match_within_kernels(
                     for compute_file_tile, compute_file_port in d1["pe_port"]:
                         found = False
                         for pe in graph.get_tiles():
-                            if (
-                                graph.id_to_name[str(pe)]
-                                == f"{match}$inner_compute${compute_file_tile}"
-                            ):
+                            pe_full_name = graph.id_to_name[str(pe)]
+                            # In case we have track info in reg name beginning with "@"
+                            assert len(pe_full_name.split('@')) <= 2, f"Assume we only have <= one @ in the name {pe_full_name}"
+                            pe_stripped  = pe_full_name.split('@', 1)[0]
+                            if pe_stripped == f"{match}$inner_compute${compute_file_tile}":
                                 found_port = False
                                 for source in graph.sources[pe]:
                                     if source.port in port_remap_r:
