@@ -694,6 +694,19 @@ class RoutingResultGraph:
                             node.kernel = self.id_to_name[node.tile_id].split("$")[0]
                             # Add reg name to include track information
                             self.id_to_name[node.tile_id] = self.id_to_name[node.tile_id] + "@" + node.reg_name
+                            # Update self.placement so that it matches the node's new tile_id and coordinate
+                            # Find which coordinate currently has this tile
+                            for coords, tile_list in self.placement.items():
+                                if node.tile_id in tile_list:
+                                    tile_list.remove(node.tile_id)
+                                    if len(tile_list) == 0:
+                                        del self.placement[coords]
+                                    break
+                            # Insert this tile_id into (node.x, node.y)
+                            new_coords = (node.x, node.y)
+                            if new_coords not in self.placement:
+                                self.placement[new_coords] = []
+                            self.placement[new_coords].append(node.tile_id)
                             seen_regs = []
 
             if not resolved:

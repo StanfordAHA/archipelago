@@ -962,6 +962,11 @@ def pipeline_pnr(
         sparse=sparse,
     )
 
+    # Update placement dict
+    for coord, tile_ids in graph.placement.items():
+        for tile_id in tile_ids:
+            placement[tile_id] = coord
+
     print("\nApplication Frequency:")
     curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
 
