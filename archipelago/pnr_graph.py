@@ -129,6 +129,9 @@ class TileNode:
             self.tile_type = TileType.IO1
         elif self.tile_id[0] == "U":
             self.tile_type = TileType.IO16
+        elif self.tile_id[0] == "V":
+            self.tile_type = TileType.IO16
+
 
         self.kernel = kernel
 
