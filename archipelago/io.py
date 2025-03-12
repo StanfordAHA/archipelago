@@ -1,5 +1,6 @@
 import os
 import shutil
+from graphviz import Digraph
 
 
 def dump_packing_result(netlist, bus, filename, id_to_name):
@@ -101,8 +102,68 @@ def load_packing_result(filename):
     id_to_name = pythunder.io.load_id_to_name(filename)
     return (netlist, bus_mode), id_to_name
 
+def _generate_visualization_from_packed(packed_file, output_basename, label_edges=False):
+    """
+    Parse the .packed file and create a Graphviz diagram named 'design_packed'
+    (by default, 'design_packed.pdf').
+    """
+    colors = {
+        "p": "blue",
+        "m": "orange",
+        "M": "purple",
+        "I": "green",
+        "i": "green",
+        "r": "red",
+    }
 
-def dump_packed_result(app_name, cwd, inputs, id_to_name, copy_to_dir=None):
+    with open(packed_file, 'r') as f:
+        lines = f.readlines()
+
+    graph = Digraph()
+    read_netlist = False
+
+    for line in lines:
+        if line.strip() == "":
+            # If there's a blank line, you can decide whether it signals end-of-netlist
+            break
+
+        if read_netlist:
+            # Example netlist lines:
+            # "Netlists:\n"
+            # "netA:(m1, in)\t(m2, out)\n"
+            edge_id = line.split(":")[0]  # e.g., "netA"
+            # The line portion after ":" might have multiple (blk_id, port) segments
+            remainder = line.split(":")[1].strip()
+
+            # The first one is the source:
+            src_part = remainder.split("\t")[0].strip()
+            # src_part might look like "(m1, in)"
+            src_full = src_part.strip("()")
+            source, source_port = [x.strip() for x in src_full.split(",")]
+
+            # Ensure the source node is drawn
+            graph.node(source, color=colors.get(source[0], "black"))
+
+            # The rest are destinations, if any
+            dest_parts = remainder.split("\t")[1:]
+            for dest_part in dest_parts:
+                dest_full = dest_part.strip("()\n")
+                dest, dest_port = [x.strip() for x in dest_full.split(",")]
+                # Ensure the destination node is drawn
+                graph.node(dest, color=colors.get(dest[0], "black"))
+
+                if label_edges:
+                    graph.edge(source, dest, label=f"{source_port}->{dest_port}")
+                else:
+                    graph.edge(source, dest)
+
+        if line.startswith("Netlists:"):
+            read_netlist = True
+
+    # Render the diagram. By default, this generates a PDF at output_basename.pdf
+    graph.render(filename=output_basename, cleanup=True)
+
+def dump_packed_result(app_name, cwd, inputs, id_to_name, copy_to_dir=None, visualize=True):
     assert inputs is not None
     if id_to_name is None:
         id_to_name = {}
@@ -122,6 +183,11 @@ def dump_packed_result(app_name, cwd, inputs, id_to_name, copy_to_dir=None):
     # copy file over
     if copy_to_dir is not None:
         shutil.copy2(packed_file, copy_to_dir)
+
+    # visualize the packed file
+    if visualize:
+        graph_output = os.path.join(cwd, "design_packed")
+        _generate_visualization_from_packed(packed_file, graph_output)
 
     return packed_file
 
