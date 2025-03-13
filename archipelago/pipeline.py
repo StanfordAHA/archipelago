@@ -1077,7 +1077,7 @@ def pipeline_pnr(
         print(
             "\nAdded", graph.added_regs - starting_regs, "registers to routing graph\n"
         )
-    elif "EXHAUSTIVE_PIPE" in os.environ:
+    elif os.environ.get("EXHAUSTIVE_PIPE") and os.environ["EXHAUSTIVE_PIPE"] != "0":
         starting_regs = graph.added_regs
         exhaustive_pipe(graph, id_to_name, placement, routing)
         curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
