@@ -37,6 +37,10 @@ def reduce_switching(routing_result, interconnect, ignore_tiles=None, compact=Fa
             switch_box = tile.switchbox
             num_tracks = switch_box.num_track
             for side in canal.interconnect.SwitchBoxSide:
+                if switch_box.isTall:
+                    if side == canal.interconnect.SwitchBoxSide.NORTH:
+                        # skip the north side
+                        continue
                 for t in range(num_tracks):
                     sb = switch_box.get_sb(side, t, canal.interconnect.SwitchBoxIO.SB_OUT)
                     if sb in used_nodes:
