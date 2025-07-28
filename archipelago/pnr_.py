@@ -238,9 +238,10 @@ def pnr(
 
         else:
             # Find first value of PNR_PLACER_DENSITY that routes
-            pnr_placer_density = 0
+            # Try PNR_PLACER_EXP=4 first, then sweep through 1,2,3,5,6,7,...
+            pnr_placer_sequence = [4] + list(range(1, 4)) + list(range(5, 31))
 
-            while pnr_placer_density <= 30:
+            for pnr_placer_density in pnr_placer_sequence:
                 if os.path.isfile(placement_filename):
                     os.remove(placement_filename)
 
@@ -274,8 +275,6 @@ def pnr(
                     break
                 except:
                     print("Unable to route with PNR_PLACER_EXP:", pnr_placer_density)
-
-                pnr_placer_density += 1
 
     if "PNR_PLACER_EXP" in os.environ and not pnr_placer_exp_set:
         del os.environ["PNR_PLACER_EXP"]
