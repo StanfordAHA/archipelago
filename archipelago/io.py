@@ -142,7 +142,12 @@ def _generate_visualization_from_packed(packed_file, output_basename, label_edge
             source, source_port = [x.strip() for x in src_full.split(",")]
 
             # Ensure the source node is drawn
-            graph.node(source, color=colors.get(source[0], "black"))
+            if 'regs' in source_port:
+                source_label = source_port
+                graph.node(source, color=colors.get(source[0], "black"), label=source_label)
+            else:
+                graph.node(source, color=colors.get(source[0], "black"))
+            # breakpoint()
 
             # The rest are destinations, if any
             dest_parts = remainder.split("\t")[1:]
@@ -150,7 +155,11 @@ def _generate_visualization_from_packed(packed_file, output_basename, label_edge
                 dest_full = dest_part.strip("()\n")
                 dest, dest_port = [x.strip() for x in dest_full.split(",")]
                 # Ensure the destination node is drawn
-                graph.node(dest, color=colors.get(dest[0], "black"))
+                if 'regs' in dest_port:
+                    dest_label = dest_port
+                    graph.node(dest, color=colors.get(dest[0], "black"), label=dest_label)
+                else:
+                    graph.node(dest, color=colors.get(dest[0], "black"))
 
                 if label_edges:
                     graph.edge(source, dest, label=f"{source_port}->{dest_port}")
@@ -454,3 +463,9 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
         _generate_visualization_from_packed(new_packed_file, cwd + "/design_packed_post_pipe")
 
 
+
+if __name__ == "__main__":
+    packed_filename = "/aha/design_post_pipe_compressed.packed"
+    output_base_name = "/aha/design_packed_compressed"
+    print(f"Generating visualization from {packed_filename}. The result is placed at {output_base_name}.pdf")
+    _generate_visualization_from_packed(packed_filename, output_base_name)
