@@ -91,7 +91,7 @@ def build_and_collapse_graph(filename: str) -> pydot.Dot:
 
             reg_count = len(regs_seen)
             collapsed_name = f"r{collapsed_counter}"
-            collapsed_type = f"{reg_count} regs"
+            collapsed_type = f"{reg_count} fifos"
             collapsed_counter += 1
 
             add_node(collapsed_name, collapsed_type)

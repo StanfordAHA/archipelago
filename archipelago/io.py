@@ -142,7 +142,7 @@ def _generate_visualization_from_packed(packed_file, output_basename, label_edge
             source, source_port = [x.strip() for x in src_full.split(",")]
 
             # Ensure the source node is drawn
-            if 'regs' in source_port:
+            if 'fifos' in source_port:
                 source_label = source_port
                 graph.node(source, color=colors.get(source[0], "black"), label=source_label)
             else:
@@ -155,7 +155,7 @@ def _generate_visualization_from_packed(packed_file, output_basename, label_edge
                 dest_full = dest_part.strip("()\n")
                 dest, dest_port = [x.strip() for x in dest_full.split(",")]
                 # Ensure the destination node is drawn
-                if 'regs' in dest_port:
+                if 'fifos' in dest_port:
                     dest_label = dest_port
                     graph.node(dest, color=colors.get(dest[0], "black"), label=dest_label)
                 else:
@@ -465,7 +465,7 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
 
 
 if __name__ == "__main__":
-    packed_filename = "/aha/design_post_pipe_compressed.packed"
-    output_base_name = "/aha/design_packed_compressed"
+    packed_filename = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed"
+    output_base_name = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed"
     print(f"Generating visualization from {packed_filename}. The result is placed at {output_base_name}.pdf")
     _generate_visualization_from_packed(packed_filename, output_base_name)
