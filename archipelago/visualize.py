@@ -465,16 +465,24 @@ def draw_arrow_on_tile(
     )
 
 
-def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id):
+def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id, graph):
+    sb = graph[tile_x, tile_y].switchbox
+    # Per-side lane count + spacing (handles tall SBs)
+    def lanes_and_step(side_str):
+        n = lane_count_for_side(sb, side_str)
+        return n, arrow_distance_for_count(n)
+
     if "NORTH" in reg_name:
+        n, step = lanes_and_step("Top")
         x = (
             GLOBAL_OFFSET_X
             + GLOBAL_TILE_MARGIN
             + tile_x * GLOBAL_TILE_WIDTH
-            + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1 + n) * step
         )
         y = GLOBAL_OFFSET_Y + tile_y * GLOBAL_TILE_WIDTH + (GLOBAL_TILE_WIDTH / 7)
     elif "EAST" in reg_name:
+        n, step = lanes_and_step("Right")
         x = (
             GLOBAL_OFFSET_X
             + tile_x * GLOBAL_TILE_WIDTH
@@ -485,14 +493,15 @@ def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id):
             GLOBAL_OFFSET_Y
             + GLOBAL_TILE_MARGIN
             + tile_y * GLOBAL_TILE_WIDTH
-            + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1 + n) * step
         )
     elif "SOUTH" in reg_name:
+        n, step = lanes_and_step("Bottom")
         x = (
             GLOBAL_OFFSET_X
             + GLOBAL_TILE_MARGIN
             + tile_x * GLOBAL_TILE_WIDTH
-            + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1) * step
         )
         y = (
             GLOBAL_OFFSET_Y
@@ -501,12 +510,13 @@ def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id):
             - (GLOBAL_TILE_WIDTH / 7)
         )
     elif "WEST" in reg_name:
+        n, step = lanes_and_step("Left")
         x = GLOBAL_OFFSET_X + tile_x * GLOBAL_TILE_WIDTH + (GLOBAL_TILE_WIDTH / 7)
         y = (
             GLOBAL_OFFSET_Y
             + GLOBAL_TILE_MARGIN
             + tile_y * GLOBAL_TILE_WIDTH
-            + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1) * step
         )
 
     pw = (GLOBAL_TILE_WIDTH - 2 * GLOBAL_TILE_MARGIN) / 25
@@ -593,7 +603,7 @@ def draw_used_routes(draw, routing_result_graph, width, graph):
                     width=ARROW_WIDTH,
                 )
         elif node.route_type == RouteType.REG and node.bit_width == width:
-            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track)
+            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track, graph)
 
 
 def draw_crit_routes(draw, routing_result_graph, width, crit_nodes, graph):
@@ -648,7 +658,7 @@ def draw_crit_routes(draw, routing_result_graph, width, crit_nodes, graph):
                     width=ARROW_WIDTH,
                 )
         elif node.route_type == RouteType.REG and node.bit_width == width:
-            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track)
+            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track, graph)
 
 
 def add_loc(draw, x, y):
