@@ -3,9 +3,6 @@ import copy
 import json
 import argparse
 import sys
-from pycyclone.io import load_placement
-import pycyclone
-import pythunder
 from archipelago.io import load_routing_result
 from archipelago.pnr_graph import (
     RoutingResultGraph,
@@ -17,6 +14,9 @@ from archipelago.pnr_graph import (
 )
 from archipelago.visualize import visualize_pnr
 from canal.util import IOSide
+from pycyclone.io import load_placement
+import pycyclone
+import pythunder
 
 
 class PathComponents:
@@ -225,7 +225,7 @@ def calc_fifo_to_out(graph, node, parent, comp, mem_tile_column, mem_col_index_i
 
 
 def sta(graph, west_in_io_sides):
-    mem_col_index_increment = 0 if west_in_io_sides else 1 
+    mem_col_index_increment = 0 if west_in_io_sides else 1
     mem_tile_column = get_mem_tile_columns(graph, mem_col_index_increment)
     nodes = graph.topological_sort()
     timing_info = {}
@@ -433,7 +433,7 @@ def main():
         placement, routing, id_to_name, netlist, pe_latency, 0, io_cycles, sparse
     )
 
-    clock_speed, crit_path, crit_nodes = sta(routing_result_graph)
+    clock_speed, crit_path, crit_nodes = sta(routing_result_graph, west_in_io_sides=False)
 
     if visualize:
         dirname = os.path.dirname(packed_file)
@@ -445,7 +445,7 @@ def main():
         assert os.path.exists(graph16), route + " does not exists"
         routing_graphs = load_graph([graph1, graph16])
 
-        visualize_pnr(routing_graphs, routing_result_graph, crit_nodes, dirname)
+        visualize_pnr(routing_graphs, routing_result_graph, crit_nodes, dirname, starting_x_coord=12)
 
     return clock_speed
 
