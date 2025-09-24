@@ -1091,5 +1091,6 @@ def pipeline_pnr(
 
     dump_routing_result(app_dir, routing)
     dump_placement_result(app_dir, placement, id_to_name)
+    dump_id_to_name(app_dir, id_to_name)
 
     return placement, routing, id_to_name
