@@ -848,36 +848,18 @@ def draw_used_tiles(draw, img, tile_history, count, tmp, width=2):
         by = GLOBAL_OFFSET_Y + y * GLOBAL_TILE_WIDTH + GLOBAL_TILE_MARGIN
         ey_box = by + w
 
-        if y == 0:
-            # GLB IOs
-            slots = max(1, int(MAX_PACKED_GLB_IO_NUM))
-            band_h = w // slots
-            n = min(slots, len(cont[0]))
-            for i in range(n):
-                sy = by + i * band_h
-                ey = sy + band_h if i < slots - 1 else ey_box
-                tile_type = cont[0][i]
-                draw.rectangle([sx, sy, ex, ey], fill="palegreen", outline="Black", width=width)
-            continue
-
-        if y == MU16_Y_COORD:
-            # MU IOs
-            slots = max(1, int(MAX_PACKED_MU_IO_NUM))
-            band_h = w // slots
-            n = min(slots, len(cont[0]))
-            for i in range(n):
-                sy = by + i * band_h
-                ey = sy + band_h if i < slots - 1 else ey_box
-                tile_type = cont[0][i]
-                draw.rectangle([sx, sy, ex, ey], fill="palegreen", outline="Black", width=width)
-            continue
-
-        # Normal tiles
-        dy = w // max(count, 1)
+        local_slots = max(1, len(cont[0]))
+        band_h = w // local_slots
         for i in range(len(cont[0])):
             tile_type = cont[0][i]
-            sy = by + i * dy
-            img.paste(tmp[tile_type], (sx, sy))
+            sy = by + i * band_h
+            ey = sy + band_h if i < local_slots - 1 else ey_box
+            # Sample fill color from the template stripe
+            try:
+                fill_color = tmp[tile_type].getpixel((4, 4))
+            except Exception:
+                fill_color = "lightgrey"
+            draw.rectangle([sx, sy, ex, ey], fill=fill_color, outline="Black", width=width)
 
 def label_used_tiles(draw, img, tile_history, count, width=2):
     for loc in tile_history:
@@ -886,14 +868,7 @@ def label_used_tiles(draw, img, tile_history, count, width=2):
         w = GLOBAL_TILE_WIDTH - 2 * GLOBAL_TILE_MARGIN
         sx = GLOBAL_OFFSET_X + x * GLOBAL_TILE_WIDTH + GLOBAL_TILE_MARGIN
         by = GLOBAL_OFFSET_Y + y * GLOBAL_TILE_WIDTH + GLOBAL_TILE_MARGIN
-
-        if y == 0:
-            row_slots = max(1, int(MAX_PACKED_GLB_IO_NUM))
-        elif y == MU16_Y_COORD:
-            row_slots = max(1, int(MAX_PACKED_MU_IO_NUM))
-        else:
-            row_slots = max(1, int(count))
-
+        row_slots = max(1, len(cont[0]))
         dy_row = w // row_slots
         ey_box = by + w
 
