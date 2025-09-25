@@ -35,6 +35,10 @@ GLOBAL_OFFSET_Y = 20
 GLOBAL_NUM_TRACK = 5
 GLOBAL_ARROW_DISTANCE = GLOBAL_TILE_WIDTH_INNER // (GLOBAL_NUM_TRACK * 2 + 1)
 ARROW_WIDTH = 10
+# TODO: hardcode MU16 y coord
+MU16_Y_COORD = 17
+MAX_PACKED_GLB_IO_NUM = 4
+MAX_PACKED_MU_IO_NUM = 2
 
 side_map = ["Right", "Bottom", "Left", "Top"]
 io_map = ["IN", "OUT"]
@@ -154,18 +158,20 @@ def draw_diagonal_arrow(
     draw.line(xy=new_xy, fill=color, width=width)
 
 
-def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
+def draw_arrow_between_sb(draw, node, node2, graph, color="Black", width=1):
     tile_x = node.x
     tile_y = node.y
     side = side_map[node.side]
     io = io_map[node.io]
     track_id = node.track
+    nlanes1 = lane_count_for_side(graph[node.x, node.y].switchbox, side)
 
     tile_x2 = node2.x
     tile_y2 = node2.y
     side2 = side_map[node2.side]
     io2 = io_map[node2.io]
     track_id2 = node2.track
+    nlanes2 = lane_count_for_side(graph[node2.x, node2.y].switchbox, side2)
 
     if tile_x != tile_x2 or tile_y != tile_y2:
         return
@@ -177,7 +183,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(nlanes1)
             )
             y = GLOBAL_OFFSET_Y + tile_y * GLOBAL_TILE_WIDTH
         elif io == "OUT":
@@ -186,7 +192,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes1)
             )
             y = GLOBAL_OFFSET_Y + GLOBAL_TILE_MARGIN + tile_y * GLOBAL_TILE_WIDTH
     elif side == "Right":
@@ -197,7 +203,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(nlanes1)
             )
         elif io == "OUT":
             dir = "RIGHT"
@@ -211,7 +217,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes1)
             )
     elif side == "Bottom":
         if io == "IN":
@@ -220,7 +226,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes1)
             )
             y = GLOBAL_OFFSET_Y + tile_y * GLOBAL_TILE_WIDTH + GLOBAL_TILE_WIDTH
         elif io == "OUT":
@@ -229,7 +235,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(nlanes1)
             )
             y = (
                 GLOBAL_OFFSET_Y
@@ -245,7 +251,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes1)
             )
         elif io == "OUT":
             dir = "LEFT"
@@ -254,7 +260,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(nlanes1)
             )
 
     if side2 == "Top":
@@ -264,7 +270,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1) * arrow_distance_for_count(nlanes2)
             )
             y2 = GLOBAL_OFFSET_Y + tile_y2 * GLOBAL_TILE_WIDTH
         elif io2 == "OUT":
@@ -273,7 +279,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes2)
             )
             y2 = GLOBAL_OFFSET_Y + GLOBAL_TILE_MARGIN + tile_y2 * GLOBAL_TILE_WIDTH
     elif side2 == "Right":
@@ -284,7 +290,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1) * arrow_distance_for_count(nlanes2)
             )
         elif io2 == "OUT":
             dir2 = "RIGHT"
@@ -298,7 +304,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes2)
             )
     elif side2 == "Bottom":
         if io2 == "IN":
@@ -307,7 +313,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes2)
             )
             y2 = GLOBAL_OFFSET_Y + tile_y2 * GLOBAL_TILE_WIDTH + GLOBAL_TILE_WIDTH
         elif io2 == "OUT":
@@ -316,7 +322,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1) * arrow_distance_for_count(nlanes2)
             )
             y2 = (
                 GLOBAL_OFFSET_Y
@@ -332,7 +338,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1 + GLOBAL_NUM_TRACK) * arrow_distance_for_count(nlanes2)
             )
         elif io2 == "OUT":
             dir2 = "LEFT"
@@ -341,7 +347,7 @@ def draw_arrow_between_sb(draw, node, node2, color="Black", width=1):
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y2 * GLOBAL_TILE_WIDTH
-                + (track_id2 + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id2 + 1) * arrow_distance_for_count(nlanes2)
             )
     draw_diagonal_arrow(
         draw=draw, x=x, y=y, dir=dir, x2=x2, y2=y2, dir2=dir2, color=color, width=width
@@ -359,6 +365,7 @@ def draw_arrow_on_tile(
     width=1,
     source_port=False,
     sink_port=False,
+    num_tracks=GLOBAL_NUM_TRACK,
 ):
     if side == "Top":
         if io == "IN":
@@ -367,7 +374,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(num_tracks)
             )
             y = GLOBAL_OFFSET_Y + tile_y * GLOBAL_TILE_WIDTH
         elif io == "OUT":
@@ -376,7 +383,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + num_tracks) * arrow_distance_for_count(num_tracks)
             )
             y = GLOBAL_OFFSET_Y + GLOBAL_TILE_MARGIN + tile_y * GLOBAL_TILE_WIDTH
     elif side == "Right":
@@ -387,7 +394,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(num_tracks)
             )
         elif io == "OUT":
             dir = "RIGHT"
@@ -401,7 +408,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + num_tracks) * arrow_distance_for_count(num_tracks)
             )
     elif side == "Bottom":
         if io == "IN":
@@ -410,7 +417,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + num_tracks) * arrow_distance_for_count(num_tracks)
             )
             y = GLOBAL_OFFSET_Y + tile_y * GLOBAL_TILE_WIDTH + GLOBAL_TILE_WIDTH
         elif io == "OUT":
@@ -419,7 +426,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_X
                 + GLOBAL_TILE_MARGIN
                 + tile_x * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(num_tracks)
             )
             y = (
                 GLOBAL_OFFSET_Y
@@ -435,7 +442,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1 + num_tracks) * arrow_distance_for_count(num_tracks)
             )
         elif io == "OUT":
             dir = "LEFT"
@@ -444,7 +451,7 @@ def draw_arrow_on_tile(
                 GLOBAL_OFFSET_Y
                 + GLOBAL_TILE_MARGIN
                 + tile_y * GLOBAL_TILE_WIDTH
-                + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+                + (track_id + 1) * arrow_distance_for_count(num_tracks)
             )
     draw_arrow(
         draw=draw,
@@ -458,16 +465,24 @@ def draw_arrow_on_tile(
     )
 
 
-def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id):
+def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id, graph):
+    sb = graph[tile_x, tile_y].switchbox
+    # Per-side lane count + spacing (handles tall SBs)
+    def lanes_and_step(side_str):
+        n = lane_count_for_side(sb, side_str)
+        return n, arrow_distance_for_count(n)
+
     if "NORTH" in reg_name:
+        n, step = lanes_and_step("Top")
         x = (
             GLOBAL_OFFSET_X
             + GLOBAL_TILE_MARGIN
             + tile_x * GLOBAL_TILE_WIDTH
-            + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1 + n) * step
         )
         y = GLOBAL_OFFSET_Y + tile_y * GLOBAL_TILE_WIDTH + (GLOBAL_TILE_WIDTH / 7)
     elif "EAST" in reg_name:
+        n, step = lanes_and_step("Right")
         x = (
             GLOBAL_OFFSET_X
             + tile_x * GLOBAL_TILE_WIDTH
@@ -478,14 +493,15 @@ def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id):
             GLOBAL_OFFSET_Y
             + GLOBAL_TILE_MARGIN
             + tile_y * GLOBAL_TILE_WIDTH
-            + (track_id + 1 + GLOBAL_NUM_TRACK) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1 + n) * step
         )
     elif "SOUTH" in reg_name:
+        n, step = lanes_and_step("Bottom")
         x = (
             GLOBAL_OFFSET_X
             + GLOBAL_TILE_MARGIN
             + tile_x * GLOBAL_TILE_WIDTH
-            + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1) * step
         )
         y = (
             GLOBAL_OFFSET_Y
@@ -494,12 +510,13 @@ def draw_reg_on_tile(draw, tile_x, tile_y, reg_name, track_id):
             - (GLOBAL_TILE_WIDTH / 7)
         )
     elif "WEST" in reg_name:
+        n, step = lanes_and_step("Left")
         x = GLOBAL_OFFSET_X + tile_x * GLOBAL_TILE_WIDTH + (GLOBAL_TILE_WIDTH / 7)
         y = (
             GLOBAL_OFFSET_Y
             + GLOBAL_TILE_MARGIN
             + tile_y * GLOBAL_TILE_WIDTH
-            + (track_id + 1) * GLOBAL_ARROW_DISTANCE
+            + (track_id % n + 1) * step
         )
 
     pw = (GLOBAL_TILE_WIDTH - 2 * GLOBAL_TILE_MARGIN) / 25
@@ -533,7 +550,7 @@ def find_last_sb(routing_result_graph, node):
         return None
 
 
-def draw_used_routes(draw, routing_result_graph, width):
+def draw_used_routes(draw, routing_result_graph, width, graph):
     color = lambda: (
         random.randint(64, 128),
         random.randint(64, 255),
@@ -558,6 +575,7 @@ def draw_used_routes(draw, routing_result_graph, width):
             for sink in routing_result_graph.sinks[node]:
                 if isinstance(sink, RouteNode) and sink.route_type == RouteType.PORT:
                     sink_port = True
+            nlanes = lane_count_for_side(graph[node.x, node.y].switchbox, side_map[node.side])
 
             draw_arrow_on_tile(
                 draw,
@@ -565,11 +583,12 @@ def draw_used_routes(draw, routing_result_graph, width):
                 node.y,
                 side_map[node.side],
                 io_map[node.io],
-                node.track,
+                node.track % nlanes,
                 color=net_colors[node.net_id],
                 width=ARROW_WIDTH,
                 source_port=source_port,
                 sink_port=sink_port,
+                num_tracks=nlanes,
             )
 
             last_sb = find_last_sb(routing_result_graph, node)
@@ -579,14 +598,15 @@ def draw_used_routes(draw, routing_result_graph, width):
                     draw,
                     node,
                     last_sb,
+                    graph,
                     color=net_colors[node.net_id],
                     width=ARROW_WIDTH,
                 )
         elif node.route_type == RouteType.REG and node.bit_width == width:
-            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track)
+            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track, graph)
 
 
-def draw_crit_routes(draw, routing_result_graph, width, crit_nodes):
+def draw_crit_routes(draw, routing_result_graph, width, crit_nodes, graph):
     color = lambda: (255, 0, 0, 255)
     net_colors = {}
 
@@ -610,6 +630,7 @@ def draw_crit_routes(draw, routing_result_graph, width, crit_nodes):
             for sink in routing_result_graph.sinks[node]:
                 if isinstance(sink, RouteNode) and sink.route_type == RouteType.PORT:
                     sink_port = True
+            nlanes = lane_count_for_side(graph[node.x, node.y].switchbox, side_map[node.side])
 
             draw_arrow_on_tile(
                 draw,
@@ -617,11 +638,12 @@ def draw_crit_routes(draw, routing_result_graph, width, crit_nodes):
                 node.y,
                 side_map[node.side],
                 io_map[node.io],
-                node.track,
+                node.track % nlanes,
                 color=net_colors[node.net_id],
                 width=ARROW_WIDTH,
                 source_port=source_port,
                 sink_port=sink_port,
+                num_tracks=nlanes,
             )
 
             last_sb = find_last_sb(routing_result_graph, node)
@@ -631,11 +653,12 @@ def draw_crit_routes(draw, routing_result_graph, width, crit_nodes):
                     draw,
                     node,
                     last_sb,
+                    graph,
                     color=net_colors[node.net_id],
                     width=ARROW_WIDTH,
                 )
         elif node.route_type == RouteType.REG and node.bit_width == width:
-            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track)
+            draw_reg_on_tile(draw, node.x, node.y, node.reg_name, node.track, graph)
 
 
 def add_loc(draw, x, y):
@@ -667,8 +690,20 @@ def create_tile(
     t2xy = (px + int(pw * pr), py + int(pw * 0.6))
     draw.polygon(xy=xy, fill=color_tile, outline=color_line, width=width)
 
+def lane_count_for_side(sb, side_str):
+    try:
+        if side_str in ("Left", "Right") and (sb.num_horizontal_track > sb.num_track):
+            return sb.num_horizontal_track
+        else:
+            return GLOBAL_NUM_TRACK
+    except Exception:
+        return GLOBAL_NUM_TRACK
 
-def draw_all_tiles(draw, img, graph):
+def arrow_distance_for_count(n):
+    inner = GLOBAL_TILE_WIDTH - 2 * GLOBAL_TILE_MARGIN
+    return max(1, inner // (n * 2 + 1))
+
+def draw_all_tiles(draw, img, graph, starting_x_coord):
     tmp = Image.new(
         "RGB",
         (
@@ -684,6 +719,16 @@ def draw_all_tiles(draw, img, graph):
     sides = switchbox.SIDES
 
     create_tile(draw=draw1, x=0, y=0)
+    for side_str in ["Top", "Right", "Bottom", "Left"]:
+        nlanes = lane_count_for_side(switchbox, side_str)
+        for io in ["IN", "OUT"]:
+            for t in range(nlanes):
+                draw_arrow_on_tile(
+                    draw1, tile_x=0, tile_y=0,
+                    side=side_str, io=io, track_id=t,
+                    width=1,
+                    num_tracks=nlanes
+                )
     box1 = (
         GLOBAL_OFFSET_X,
         GLOBAL_OFFSET_Y,
@@ -699,18 +744,15 @@ def draw_all_tiles(draw, img, graph):
     create_tile(draw=draw1, x=0, y=1)
 
     # draw the arrows
-    for i in range(sides):
-        side = pycyclone.SwitchBoxSide(i)
-        sbs = switchbox.get_sbs_by_side(side)
+    for side_str in ["Top", "Right", "Bottom", "Left"]:
+        nlanes = lane_count_for_side(switchbox, side_str)
         for io in ["IN", "OUT"]:
-            for i in range(len(sbs)):
+            for t in range(nlanes):
                 draw_arrow_on_tile(
-                    draw1,
-                    tile_x=0,
-                    tile_y=1,
-                    side=side.name,
-                    io=io,
-                    track_id=i % GLOBAL_NUM_TRACK,
+                    draw1, tile_x=0, tile_y=1,
+                    side=side_str, io=io, track_id=t,
+                    width=1,
+                    num_tracks=nlanes
                 )
     box2 = (
         GLOBAL_OFFSET_X,
@@ -721,6 +763,21 @@ def draw_all_tiles(draw, img, graph):
     region2 = tmp.crop(box2)
 
     for x, y in graph:
+        if x < starting_x_coord and y > 0:
+            continue
+        # MU16: draw only TOP tracks
+        if y == MU16_Y_COORD:
+            create_tile(draw=draw, x=x, y=y)
+            sb = graph[x, y].switchbox
+            nlanes = lane_count_for_side(sb, "Top")
+            for t in range(nlanes):
+                draw_arrow_on_tile(
+                    draw, tile_x=x, tile_y=y,
+                    side="Top", io="OUT", track_id=t,
+                    width=1, num_tracks=nlanes
+                )
+            add_loc(draw, x, y)
+            continue
         box = (
             GLOBAL_OFFSET_X + x * GLOBAL_TILE_WIDTH,
             GLOBAL_OFFSET_Y + y * GLOBAL_TILE_WIDTH,
@@ -789,16 +846,20 @@ def draw_used_tiles(draw, img, tile_history, count, tmp, width=2):
         sx = GLOBAL_OFFSET_X + x * GLOBAL_TILE_WIDTH + GLOBAL_TILE_MARGIN
         ex = sx + w
         by = GLOBAL_OFFSET_Y + y * GLOBAL_TILE_WIDTH + GLOBAL_TILE_MARGIN
+        ey_box = by + w
 
-        dy = w // count
+        local_slots = max(1, len(cont[0]))
+        band_h = w // local_slots
         for i in range(len(cont[0])):
             tile_type = cont[0][i]
-            tile_id = cont[1][i]
-            sy = by + i * dy
-            ey = by + (i + 1) * dy
-            box = (sx, sy, ex, ey)
-            img.paste(tmp[tile_type], box)
-
+            sy = by + i * band_h
+            ey = sy + band_h if i < local_slots - 1 else ey_box
+            # Sample fill color from the template stripe
+            try:
+                fill_color = tmp[tile_type].getpixel((4, 4))
+            except Exception:
+                fill_color = "lightgrey"
+            draw.rectangle([sx, sy, ex, ey], fill=fill_color, outline="Black", width=width)
 
 def label_used_tiles(draw, img, tile_history, count, width=2):
     for loc in tile_history:
@@ -806,20 +867,24 @@ def label_used_tiles(draw, img, tile_history, count, width=2):
         cont = tile_history[loc]
         w = GLOBAL_TILE_WIDTH - 2 * GLOBAL_TILE_MARGIN
         sx = GLOBAL_OFFSET_X + x * GLOBAL_TILE_WIDTH + GLOBAL_TILE_MARGIN
-        ex = sx + w
         by = GLOBAL_OFFSET_Y + y * GLOBAL_TILE_WIDTH + GLOBAL_TILE_MARGIN
+        row_slots = max(1, len(cont[0]))
+        dy_row = w // row_slots
+        ey_box = by + w
 
-        dy = w // count
-        for i in range(len(cont[0])):
+        n = min(row_slots, len(cont[0]))
+        for i in range(n):
             tile_type = cont[0][i]
             tile_id = cont[1][i]
-            sy = by + i * dy
-            ey = by + (i + 1) * dy
+            sy = by + i * dy_row
+            ey = sy + dy_row if i < row_slots - 1 else ey_box
+            slot_h = ey - sy
 
-            txy1 = (sx + int(w * 0.3), by + int(dy * 0.4) + i * dy)
-            txy2 = (sx + int(w * 0.6), by + int(dy * 0.4) + i * dy)
+            txy1 = (sx + int(w * 0.3), sy + int(slot_h * 0.4))
+            txy2 = (sx + int(w * 0.6), sy + int(slot_h * 0.4))
             draw.text(xy=txy1, text=str(tile_type).split("TileType.")[1], fill="Black")
             draw.text(xy=txy2, text=tile_id, fill="Black")
+
         cxy = (sx + int(w * 0.05), by + int(w * 0.05))
         draw.text(xy=cxy, text=f"({x},{y})", fill="Black")
 
@@ -834,7 +899,7 @@ def load_graph(graph_files):
     return graph_result
 
 
-def visualize_pnr(routing_graphs, routing_result_graph, crit_nodes, app_dir):
+def visualize_pnr(routing_graphs, routing_result_graph, crit_nodes, app_dir, starting_x_coord=12):
     if not Image or not ImageDraw:
         print("Please install python package Pillow to generate visualization")
         return
@@ -873,14 +938,14 @@ def visualize_pnr(routing_graphs, routing_result_graph, crit_nodes, app_dir):
         draw = ImageDraw.Draw(img)
 
         # draw all the tiles
-        draw_all_tiles(draw, img, graph)
+        draw_all_tiles(draw, img, graph, starting_x_coord)
 
         draw_used_tiles(draw, img, tile_history, count, template)
 
-        draw_used_routes(draw, routing_result_graph, width)
+        draw_used_routes(draw, routing_result_graph, width, graph)
 
         if crit_nodes is not None:
-            draw_crit_routes(draw, routing_result_graph, width, crit_nodes)
+            draw_crit_routes(draw, routing_result_graph, width, crit_nodes, graph)
 
         label_used_tiles(draw, img, tile_history, count, template)
 
