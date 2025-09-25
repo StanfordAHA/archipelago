@@ -38,6 +38,7 @@ def pnr(
     pipeline_config_interval=0,
     pes_with_packed_ponds=None,
     sparse=False,
+    dense_ready_valid=False,
     west_in_io_sides=False,
 ):
     if input_netlist is None and len(packed_file):
@@ -193,6 +194,7 @@ def pnr(
                         pes_with_packed_ponds,
                         sparse,
                         west_in_io_sides,
+                        dense_ready_valid=dense_ready_valid,
                     )
                     freq = run_sta(
                         packed_file,
@@ -305,6 +307,7 @@ def pnr(
             pes_with_packed_ponds,
             sparse,
             west_in_io_sides,
+            dense_ready_valid=dense_ready_valid,
         )
         packed_file = dump_packed_result(
             app_name, cwd, input_netlist, id_to_name, copy_to_dir=copy_to_dir

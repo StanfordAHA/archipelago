@@ -769,8 +769,9 @@ def update_kernel_latencies(
     pipeline_config_interval,
     pes_with_packed_ponds,
     sparse,
+    dense_ready_valid=False,
 ):
-    if sparse:
+    if sparse or dense_ready_valid:
         return
 
     port_remap = json.load(open(f"{dir_name}/design.port_remap"))
@@ -926,6 +927,7 @@ def pipeline_pnr(
     pes_with_packed_ponds,
     sparse,
     west_in_io_sides,
+    dense_ready_valid=False,
 ):
     if load_only:
         packed_file = os.path.join(app_dir, "design.packed")
@@ -937,7 +939,7 @@ def pipeline_pnr(
     id_to_name_save = copy.deepcopy(id_to_name)
 
     existing_kernel_latencies = {}
-    if not sparse:
+    if not (sparse or dense_ready_valid):
         kernel_latencies_file = glob.glob(f"{app_dir}/*_compute_kernel_latencies.json")[0]
         existing_kernel_latencies = json.load(open(kernel_latencies_file, "r"))
 
@@ -982,6 +984,7 @@ def pipeline_pnr(
         pipeline_config_interval,
         pes_with_packed_ponds,
         sparse,
+        dense_ready_valid=dense_ready_valid,
     )
 
     if "POST_PNR_ITR" in os.environ:
@@ -1009,6 +1012,7 @@ def pipeline_pnr(
                     pipeline_config_interval,
                     pes_with_packed_ponds,
                     sparse,
+                    dense_ready_valid=dense_ready_valid,
                 )
 
                 print("\nIteration", itr + 1, "frequency")
@@ -1047,6 +1051,7 @@ def pipeline_pnr(
             pipeline_config_interval,
             pes_with_packed_ponds,
             sparse,
+            dense_ready_valid=dense_ready_valid,
         )
 
         for _ in range(max_itr):
@@ -1065,6 +1070,7 @@ def pipeline_pnr(
             pipeline_config_interval,
             pes_with_packed_ponds,
             sparse,
+            dense_ready_valid=dense_ready_valid,
         )
         print("\nFinal application frequency:")
         curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
@@ -1091,5 +1097,13 @@ def pipeline_pnr(
 
     dump_routing_result(app_dir, routing)
     dump_placement_result(app_dir, placement, id_to_name)
+    dump_id_to_name(app_dir, id_to_name)
 
     return placement, routing, id_to_name
+
+
+if __name__ == "__main__":
+    app_dir = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/"
+    packed_file = os.path.join(app_dir, "design.packed")
+    id_to_name = pythunder.io.load_id_to_name(packed_file)
+    dump_id_to_name(app_dir, id_to_name)
