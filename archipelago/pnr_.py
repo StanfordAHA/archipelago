@@ -102,6 +102,19 @@ def pnr(
             os.path.join(cwd, app_name + ".packed")
         )
 
+    # Pack path balancing ponds into PEs
+    pond_path_balancing = "POND_PATH_BALANCING" in os.environ and os.environ["POND_PATH_BALANCING"] == "1"
+    if pond_path_balancing:
+        assert pes_with_packed_ponds is not None, "Please provide the list of PEs to pack ponds into"
+        assert fixed_pos is not None, "Please provide fixed PE positions when packing ponds into PEs"
+
+        for pe, pond in pes_with_packed_ponds.items():
+            pond_full_name = id_to_name[pond]
+            if "path_balance_pond" in pond_full_name:
+                fixed_pos[pond] = fixed_pos[pe]
+
+            print(f"\033[93mINFO: Packing path balancing pond {pond} into PE {pe} at position {fixed_pos[pe]}\033[0m")
+
     pnr_placer_exp_set = False
     if not load_only:
         # Three cases:
