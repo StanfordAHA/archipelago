@@ -40,13 +40,15 @@ def find_break_idx(graph, crit_path):
     if len(crit_path) < 2:
         raise ValueError("Can't find available register on critical path")
 
-    if graph.sparse and len(crit_path) < 5:
+    # if graph.sparse and len(crit_path) < 5:
+    if graph.split_fifos and len(crit_path) < 5:
         raise ValueError("Can't find available FIFO on critical path")
 
     min_path = crit_path[-1][1]
     min_idx = -1
 
-    if graph.sparse:
+    # if graph.sparse:
+    if graph.split_fifos:
         for idx, node in enumerate(crit_path[:-4]):
             if (
                 isinstance(crit_path[idx][0], RouteNode)
@@ -143,7 +145,8 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
     graph.update_sources_and_sinks()
     graph.update_edge_kernels()
 
-    if graph.sparse:
+    # if graph.sparse:
+    if graph.split_fifos:
         break_idx += 3
         break_node_source = crit_path[break_idx][0]
         break_node_dest = graph.sinks[break_node_source][0]
@@ -247,7 +250,8 @@ def exhaustive_pipe(graph, id_to_name, placement, routing):
                     curr_node = graph.sinks[curr_node][0]
 
                 for idx in range(len(path)):
-                    if graph.sparse:
+                    # if graph.sparse:
+                    if graph.split_fifos:
                         if idx + 4 >= len(path):
                             break
                         if (
@@ -769,8 +773,9 @@ def update_kernel_latencies(
     pipeline_config_interval,
     pes_with_packed_ponds,
     sparse,
+    dense_ready_valid=False,
 ):
-    if sparse:
+    if sparse or dense_ready_valid:
         return
 
     port_remap = json.load(open(f"{dir_name}/design.port_remap"))
@@ -926,6 +931,7 @@ def pipeline_pnr(
     pes_with_packed_ponds,
     sparse,
     west_in_io_sides,
+    dense_ready_valid=False,
 ):
     if load_only:
         packed_file = os.path.join(app_dir, "design.packed")
@@ -937,7 +943,7 @@ def pipeline_pnr(
     id_to_name_save = copy.deepcopy(id_to_name)
 
     existing_kernel_latencies = {}
-    if not sparse:
+    if not (sparse or dense_ready_valid):
         kernel_latencies_file = glob.glob(f"{app_dir}/*_compute_kernel_latencies.json")[0]
         existing_kernel_latencies = json.load(open(kernel_latencies_file, "r"))
 
@@ -960,6 +966,7 @@ def pipeline_pnr(
         pond_latency=0,
         io_latency=io_cycles,
         sparse=sparse,
+        dense_ready_valid=dense_ready_valid,
     )
 
     # Update placement dict
@@ -982,6 +989,7 @@ def pipeline_pnr(
         pipeline_config_interval,
         pes_with_packed_ponds,
         sparse,
+        dense_ready_valid=dense_ready_valid,
     )
 
     if "POST_PNR_ITR" in os.environ:
@@ -1009,6 +1017,7 @@ def pipeline_pnr(
                     pipeline_config_interval,
                     pes_with_packed_ponds,
                     sparse,
+                    dense_ready_valid=dense_ready_valid,
                 )
 
                 print("\nIteration", itr + 1, "frequency")
@@ -1047,6 +1056,7 @@ def pipeline_pnr(
             pipeline_config_interval,
             pes_with_packed_ponds,
             sparse,
+            dense_ready_valid=dense_ready_valid,
         )
 
         for _ in range(max_itr):
@@ -1065,6 +1075,7 @@ def pipeline_pnr(
             pipeline_config_interval,
             pes_with_packed_ponds,
             sparse,
+            dense_ready_valid=dense_ready_valid,
         )
         print("\nFinal application frequency:")
         curr_freq, crit_path, crit_nets = sta(graph, west_in_io_sides)
@@ -1094,3 +1105,10 @@ def pipeline_pnr(
     dump_id_to_name(app_dir, id_to_name)
 
     return placement, routing, id_to_name
+
+
+if __name__ == "__main__":
+    app_dir = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/"
+    packed_file = os.path.join(app_dir, "design.packed")
+    id_to_name = pythunder.io.load_id_to_name(packed_file)
+    dump_id_to_name(app_dir, id_to_name)
