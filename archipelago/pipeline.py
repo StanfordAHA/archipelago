@@ -40,13 +40,15 @@ def find_break_idx(graph, crit_path):
     if len(crit_path) < 2:
         raise ValueError("Can't find available register on critical path")
 
-    if graph.sparse and len(crit_path) < 5:
+    # if graph.sparse and len(crit_path) < 5:
+    if graph.split_fifos and len(crit_path) < 5:
         raise ValueError("Can't find available FIFO on critical path")
 
     min_path = crit_path[-1][1]
     min_idx = -1
 
-    if graph.sparse:
+    # if graph.sparse:
+    if graph.split_fifos:
         for idx, node in enumerate(crit_path[:-4]):
             if (
                 isinstance(crit_path[idx][0], RouteNode)
@@ -143,7 +145,8 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
     graph.update_sources_and_sinks()
     graph.update_edge_kernels()
 
-    if graph.sparse:
+    # if graph.sparse:
+    if graph.split_fifos:
         break_idx += 3
         break_node_source = crit_path[break_idx][0]
         break_node_dest = graph.sinks[break_node_source][0]
@@ -247,7 +250,8 @@ def exhaustive_pipe(graph, id_to_name, placement, routing):
                     curr_node = graph.sinks[curr_node][0]
 
                 for idx in range(len(path)):
-                    if graph.sparse:
+                    # if graph.sparse:
+                    if graph.split_fifos:
                         if idx + 4 >= len(path):
                             break
                         if (
@@ -962,6 +966,7 @@ def pipeline_pnr(
         pond_latency=0,
         io_latency=io_cycles,
         sparse=sparse,
+        dense_ready_valid=dense_ready_valid,
     )
 
     # Update placement dict

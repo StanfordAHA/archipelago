@@ -313,7 +313,7 @@ class RoutingResultGraph:
                     if node not in visited:
                         queue.append(node)
                         visited.append(node)
-        
+
         for node in kernel_nodes:
             if len(self.sources[node]) == 0:
                 kernel_input_nodes.append(node)
@@ -827,10 +827,14 @@ def construct_graph(
     pond_latency=0,
     io_latency=0,
     sparse=False,
+    dense_ready_valid=False,
 ):
     graph = RoutingResultGraph()
     graph.id_to_name = id_to_name
     graph.sparse = sparse
+    graph.dense_ready_valid = dense_ready_valid
+    use_non_split_fifos = "USE_NON_SPLIT_FIFOS" in os.environ and os.environ.get("USE_NON_SPLIT_FIFOS") == "1"
+    graph.split_fifos = not(use_non_split_fifos) and (dense_ready_valid or sparse)
     graph.gen_placement(placement, netlist)
 
     max_reg_id = 0

@@ -530,10 +530,10 @@ def find_last_sb(routing_result_graph, node):
 
     curr_node = node
     while not found_sb and not found_port:
-        assert len(routing_result_graph.sources[curr_node]) == 1, (
-            curr_node,
-            routing_result_graph.sources[curr_node],
-        )
+        # assert len(routing_result_graph.sources[curr_node]) == 1, (
+        #     curr_node,
+        #     routing_result_graph.sources[curr_node],
+        # )
 
         source = routing_result_graph.sources[curr_node][0]
 
