@@ -1,5 +1,6 @@
 import os, re
 import shutil
+import argparse
 from graphviz import Digraph
 
 
@@ -465,7 +466,20 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
 
 
 if __name__ == "__main__":
-    packed_filename = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed"
-    output_base_name = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed"
-    print(f"Generating visualization from {packed_filename}. The result is placed at {output_base_name}.pdf")
-    _generate_visualization_from_packed(packed_filename, output_base_name)
+    parser = argparse.ArgumentParser(description="Generate visualization from design packed file.")
+    parser.add_argument(
+        "-i", "--input_design_packed",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed",
+        help="Input design packed file"
+    )
+    parser.add_argument(
+        "-o", "--output_pdf",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed",
+        help="Output PDF file base name (without .pdf extension)"
+    )
+    args = parser.parse_args()
+
+    print(f"Generating visualization from {args.input_design_packed}. The result is placed at {args.output_pdf}.pdf")
+    _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
