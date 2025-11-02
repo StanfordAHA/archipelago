@@ -3,6 +3,13 @@ import shutil
 import argparse
 from graphviz import Digraph
 
+# Handle both relative import (when used as module) and absolute import (when run as script)
+try:
+    from .compress_design_packed import build_and_collapse_graph, export_graph_to_file
+except ImportError:
+    # Import when running as a standalone script
+    from compress_design_packed import build_and_collapse_graph, export_graph_to_file
+
 
 def dump_packing_result(netlist, bus, filename, id_to_name):
     def tuple_to_str(t_val):
@@ -220,7 +227,7 @@ def dump_meta_file(halide_src, app_name, cwd):
             ext = '.pgm'
         f.write(f"output=gold{ext}\n")
 
-def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, visualize=True):
+def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True):
     """
     Generate design packed file from design.place and design.route.
 
@@ -460,8 +467,14 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
         f.write("\n")
 
     print(f"Wrote post-pipelining design_packed to {new_packed_file}.")
+
+    g = build_and_collapse_graph(new_packed_file)
+    export_graph_to_file(g, new_compressed_packed_file)
+    print(f"Wrote post-pipelining compressed design_packed to {new_compressed_packed_file}.")
+
     if visualize:
         _generate_visualization_from_packed(new_packed_file, cwd + "/design_packed_post_pipe")
+        _generate_visualization_from_packed(new_compressed_packed_file, cwd + "/design_packed_post_pipe_compressed")
 
 
 
