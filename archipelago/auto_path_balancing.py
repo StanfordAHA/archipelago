@@ -3,6 +3,8 @@ import pydot
 import argparse
 from collections import defaultdict, deque
 import itertools
+import json
+import re
 
 
 class Path:
@@ -10,6 +12,7 @@ class Path:
         self.nodes_edges = nodes_edges  # list of (node, edge_name) tuples
         self.interconnect_fifo_count = 0
         self.pond_behavioral_fifo_count = 0
+        self.pe_fifo_count = 0
         self.total_fifo_count = 0
         self.pe_count = 0
 
@@ -33,7 +36,7 @@ class Path:
         return None
 
     def get_total_fifo_count(self):
-        return self.interconnect_fifo_count + self.pond_behavioral_fifo_count # TODO: Need to return sum of interconnect FIFOs, PE FIFOs, and added pond FIFOs
+        return self.interconnect_fifo_count + self.pond_behavioral_fifo_count + self.pe_fifo_count
 
     def get_pond_behavioral_fifo_count(self):
         return self.pond_behavioral_fifo_count
@@ -52,6 +55,23 @@ class Path:
     def update_interconnect_fifo_count(self):
         interconnect_fifo_count = sum(1 for node, edge in self.nodes_edges if node.startswith("r"))
         self.interconnect_fifo_count = interconnect_fifo_count
+
+    def update_pe_fifo_count(self, pe_bypass_config, edge_dict):
+        pe_fifo_count = 0
+        for node, edge in self.nodes_edges:
+            if node.startswith("p"):
+                pe_num_active_fifos = 3
+                # Handle this based on which specific input FIFOs are bypassed
+                if node in pe_bypass_config["input_fifo_bypass"]:
+                    pe_input_num = int(edge_dict[edge][1][1].split("PE_input_width_17_num_")[1])
+                    if pe_bypass_config["input_fifo_bypass"][node][pe_input_num] == 1:
+                        pe_num_active_fifos -= 1
+                if node in pe_bypass_config["output_fifo_bypass"]:
+                    pe_num_active_fifos -= 1
+                if node in pe_bypass_config["prim_outfifo_bypass"]:
+                    pe_num_active_fifos -= 1
+                pe_fifo_count += pe_num_active_fifos
+        self.pe_fifo_count = pe_fifo_count
 
     def get_pe_count(self):
         return self.pe_count
@@ -108,6 +128,43 @@ def extract_id_to_name(filename):
             result[key] = value
 
     return result
+
+def build_edge_dict(packed_filename):
+    netlists = {}
+    in_netlist_section = False
+
+    with open(packed_filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Detect start of the Netlists section
+            if line.startswith("Netlists:"):
+                in_netlist_section = True
+                continue
+
+            # Detect the end of the Netlists section
+            if in_netlist_section and (line.startswith("ID to Names:") or line.startswith("Netlist Bus:")):
+                break
+
+            # Parse netlist lines like:
+            # e1: (r1, reg)    (I0, f2io_17_0)
+            if in_netlist_section and ":" in line:
+                match = re.match(r"(\w+):\s*(\(.*\))\s*\(.*\)", line)
+                if not match:
+                    # Split manually if regex fails
+                    edge, rest = line.split(":", 1)
+                    tuples = re.findall(r"\(([^)]+)\)", rest)
+                else:
+                    edge = match.group(1)
+                    tuples = re.findall(r"\(([^)]+)\)", line)
+
+                # Each tuple string looks like "r1, reg" → split by comma
+                parsed_tuples = [tuple(s.strip().split(", ")) for s in tuples]
+                netlists[edge] = parsed_tuples
+
+    return netlists
 
 def build_adjacency(filename: str):
     """
@@ -241,7 +298,7 @@ def closest_sum(target_sum, choices, effort_level):
 
 
 
-def get_io_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id_to_name=None):
+def get_io_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id_to_name=None, pe_bypass_config=None, edge_dict=None):
     """
     Finds all paths from inputs to outputs in the given graph.
     Each path is represented as a list of (node, edge_name) tuples.
@@ -262,6 +319,7 @@ def get_io_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id
     for path in all_paths:
         path.update_interconnect_fifo_count()
         path.update_pe_count()
+        path.update_pe_fifo_count(pe_bypass_config, edge_dict)
         path_source = path.get_source()
         path_destination = path.get_destination()
 
@@ -409,24 +467,37 @@ if __name__ == "__main__":
     parser.add_argument(
         "-i", "--input_design_packed",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin/design_post_pipe.packed",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design.packed",
+        help="Input design packed file"
+    )
+    parser.add_argument(
+        "-p", "--input_design_post_pipe_packed",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design_post_pipe.packed",
         help="Input design packed file"
     )
     parser.add_argument(
         "-d", "--id_to_name",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin/design.id_to_name",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design.id_to_name",
         help="Input id_to_name mapping file"
+    )
+    parser.add_argument(
+        "-b", "--pe_bypass_config",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/pe_id_to_fifo_bypass_config.json",
+        help="Input PE bypass configuration file"
     )
     parser.add_argument(
         "-o", "--output_design_packed",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin/design_post_pipe_compressed.packed",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design_post_pipe_compressed.packed",
         help="Output compressed design packed file"
     )
     args = parser.parse_args()
 
-    adjacency = build_adjacency(args.input_design_packed)
+    adjacency = build_adjacency(args.input_design_post_pipe_packed)
+    edge_dict = build_edge_dict(args.input_design_packed)
     parent_child_node_info = build_parent_child_node_info(adjacency)
     paths = find_all_paths(adjacency)
     for p in paths:
@@ -437,9 +508,11 @@ if __name__ == "__main__":
 
 
     id_to_name = extract_id_to_name(args.id_to_name)
+    # Read from json
+    pe_bypass_config = json.load(open(args.pe_bypass_config, 'r'))
 
     # Get I/O reconvergence groups
-    io_reconvergence_groups = get_io_reconvergence_groups(adjacency, E64_mode=True, Multi_bank_mode=True, id_to_name=id_to_name)
+    io_reconvergence_groups = get_io_reconvergence_groups(adjacency, E64_mode=True, Multi_bank_mode=True, id_to_name=id_to_name, pe_bypass_config=pe_bypass_config, edge_dict=edge_dict)
     for n, group in enumerate(io_reconvergence_groups, start=1):
         print(f"I/O Reconvergence Group {n}:")
         print(f"Source: {group.get_source()}, Destination: {group.get_destination()}, Number of paths: {len(group.get_paths())}")
