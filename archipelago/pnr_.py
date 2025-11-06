@@ -326,7 +326,8 @@ def pnr(
             app_name, cwd, input_netlist, id_to_name, copy_to_dir=copy_to_dir
         )
         post_pipelining_packed_file = os.path.join(cwd, app_name + "_post_pipe.packed")
-        generate_packed_from_place_and_route(cwd, placement_filename, route_filename, post_pipelining_packed_file)
+        post_pipelining_compressed_packed_file = os.path.join(cwd, app_name + "_post_pipe_compressed.packed")
+        generate_packed_from_place_and_route(cwd, placement_filename, route_filename, post_pipelining_packed_file, post_pipelining_compressed_packed_file)
 
     # tear down
     if use_temp:

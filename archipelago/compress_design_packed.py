@@ -1,6 +1,7 @@
 import re
 import pydot
-from collections import defaultdict
+import argparse
+from collections import defaultdict, deque
 
 def build_and_collapse_graph(filename: str) -> pydot.Dot:
     """
@@ -57,6 +58,25 @@ def build_and_collapse_graph(filename: str) -> pydot.Dot:
             added_nodes.add(name)
             node_types_new[name] = ntype
 
+    # Helper to compute minimal reg counts from a starting reg to first non-reg sinks
+    def reg_first_nonreg_min_counts(start_reg: str) -> dict:
+        queue = deque([start_reg])
+        reg_distance = {start_reg: 1}
+        sink_min = {}
+        while queue:
+            current_reg = queue.popleft()
+            current_reg_dist = reg_distance[current_reg]
+            for next_reg, _ in succs.get(current_reg, []):
+                if is_reg(next_reg):
+                    if next_reg not in reg_distance:
+                        reg_distance[next_reg] = current_reg_dist + 1
+                        queue.append(next_reg)
+                else:
+                    prev = sink_min.get(next_reg)
+                    if prev is None or current_reg_dist < prev:
+                        sink_min[next_reg] = current_reg_dist
+        return sink_min
+
     for src in list(succs.keys()):
         if is_reg(src):
             continue  # skip registers as starting points
@@ -73,40 +93,25 @@ def build_and_collapse_graph(filename: str) -> pydot.Dot:
                 continue
 
             # collapse chain of regs starting at dst
-            regs_seen = set()
-            endpoints = set()
-            stack = [dst]
-            while stack:
-                cur = stack.pop()
-                if cur in regs_seen:
-                    continue
-                if not is_reg(cur):
-                    continue
-                regs_seen.add(cur)
-                for succ, _ in succs.get(cur, []):
-                    if is_reg(succ):
-                        stack.append(succ)
-                    else:
-                        endpoints.add(succ)
-
-            reg_count = len(regs_seen)
-            collapsed_name = f"r{collapsed_counter}"
-            collapsed_type = f"{reg_count} fifos"
-            collapsed_counter += 1
-
-            add_node(collapsed_name, collapsed_type)
-
-            # edge src -> collapsed
-            key_in = (src, collapsed_name, edge_label)
-            if key_in not in added_edges:
-                new_graph.add_edge(pydot.Edge(src, collapsed_name, label=edge_label))
-                added_edges.add(key_in)
-
-            # edges collapsed -> endpoints
-            for end in endpoints:
+            sink_min_counts = reg_first_nonreg_min_counts(dst)
+            for end, reg_count in sink_min_counts.items():
                 if is_reg(end):
                     continue
+
+                collapsed_name = f"r{collapsed_counter}"
+                collapsed_type = f"{reg_count} fifos"
+                collapsed_counter += 1
+
+                add_node(collapsed_name, collapsed_type)
                 add_node(end, node_types.get(end, "unknown"))
+                key_in = (src, collapsed_name, edge_label)
+
+                # edge src -> collapsed
+                if key_in not in added_edges:
+                    new_graph.add_edge(pydot.Edge(src, collapsed_name, label=edge_label))
+                    added_edges.add(key_in)
+
+                # edges collapsed -> endpoints
                 key_out = (collapsed_name, end, None)
                 if key_out not in added_edges:
                     new_graph.add_edge(pydot.Edge(collapsed_name, end))
@@ -146,9 +151,22 @@ def export_graph_to_file(graph: pydot.Dot, outfile: str):
 
 # Example usage
 if __name__ == "__main__":
-    packed_filename = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe.packed"
-    g = build_and_collapse_graph(packed_filename)
-    output_filename = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed"
-    export_graph_to_file(g, output_filename)
-    print(f"Compressed graph exported to {output_filename}")
-    print("\033[93mNOTE: The compression script currently assumes there are no branches from regs in the compute graph. This assumption may not hold in all cases.\033[0m")
+    parser = argparse.ArgumentParser(description="Compress design packed file by collapsing register chains.")
+    parser.add_argument(
+        "-i", "--input_design_packed",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe.packed",
+        help="Input design packed file"
+    )
+    parser.add_argument(
+        "-o", "--output_design_packed",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed",
+        help="Output compressed design packed file"
+    )
+    args = parser.parse_args()
+
+    g = build_and_collapse_graph(args.input_design_packed)
+    export_graph_to_file(g, args.output_design_packed)
+    print(f"Compressed graph exported to {args.output_design_packed}")
+    # print("\033[93mNOTE: The compression script currently assumes there are no branches from regs in the compute graph. This assumption may not hold in all cases.\033[0m")

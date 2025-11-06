@@ -1,6 +1,14 @@
 import os, re
 import shutil
+import argparse
 from graphviz import Digraph
+
+# Handle both relative import (when used as module) and absolute import (when run as script)
+try:
+    from .compress_design_packed import build_and_collapse_graph, export_graph_to_file
+except ImportError:
+    # Import when running as a standalone script
+    from compress_design_packed import build_and_collapse_graph, export_graph_to_file
 
 
 def dump_packing_result(netlist, bus, filename, id_to_name):
@@ -219,7 +227,7 @@ def dump_meta_file(halide_src, app_name, cwd):
             ext = '.pgm'
         f.write(f"output=gold{ext}\n")
 
-def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, visualize=True):
+def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True):
     """
     Generate design packed file from design.place and design.route.
 
@@ -459,13 +467,32 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
         f.write("\n")
 
     print(f"Wrote post-pipelining design_packed to {new_packed_file}.")
+
+    g = build_and_collapse_graph(new_packed_file)
+    export_graph_to_file(g, new_compressed_packed_file)
+    print(f"Wrote post-pipelining compressed design_packed to {new_compressed_packed_file}.")
+
     if visualize:
         _generate_visualization_from_packed(new_packed_file, cwd + "/design_packed_post_pipe")
+        _generate_visualization_from_packed(new_compressed_packed_file, cwd + "/design_packed_post_pipe_compressed")
 
 
 
 if __name__ == "__main__":
-    packed_filename = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed"
-    output_base_name = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed"
-    print(f"Generating visualization from {packed_filename}. The result is placed at {output_base_name}.pdf")
-    _generate_visualization_from_packed(packed_filename, output_base_name)
+    parser = argparse.ArgumentParser(description="Generate visualization from design packed file.")
+    parser.add_argument(
+        "-i", "--input_design_packed",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed",
+        help="Input design packed file"
+    )
+    parser.add_argument(
+        "-o", "--output_pdf",
+        type=str,
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed",
+        help="Output PDF file base name (without .pdf extension)"
+    )
+    args = parser.parse_args()
+
+    print(f"Generating visualization from {args.input_design_packed}. The result is placed at {args.output_pdf}.pdf")
+    _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
