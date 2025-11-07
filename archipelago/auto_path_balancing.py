@@ -10,6 +10,7 @@ import re
 class Path:
     def __init__(self, nodes_edges=[]):
         self.nodes_edges = nodes_edges  # list of (node, edge_name) tuples
+        self.nodes = [node for node, edge in nodes_edges]
         self.interconnect_fifo_count = 0
         self.pond_behavioral_fifo_count = 0
         self.pe_fifo_count = 0
@@ -18,9 +19,13 @@ class Path:
 
     def add_node_edge(self, node, edge_name):
         self.nodes_edges.append((node, edge_name))
+        self.nodes.append(node)
 
     def get_nodes_edges(self):
         return self.nodes_edges
+
+    def get_nodes(self):
+        return self.nodes
 
     def print_path(self):
         print(" -> ".join([f"{node}({edge})" if edge else f"{node}" for node, edge in self.nodes_edges]))
@@ -56,19 +61,22 @@ class Path:
         interconnect_fifo_count = sum(1 for node, edge in self.nodes_edges if node.startswith("r"))
         self.interconnect_fifo_count = interconnect_fifo_count
 
+
+    # Do not count PE output FIFOs if PE is destination
+    # Do not count PE input FIFOs if PE is source
     def update_pe_fifo_count(self, pe_bypass_config, edge_dict):
         pe_fifo_count = 0
         for node, edge in self.nodes_edges:
             if node.startswith("p"):
                 pe_num_active_fifos = 3
                 # Handle this based on which specific input FIFOs are bypassed
-                if node in pe_bypass_config["input_fifo_bypass"]:
+                if node in pe_bypass_config["input_fifo_bypass"] or node == self.get_source():
                     pe_input_num = int(edge_dict[edge][1][1].split("PE_input_width_17_num_")[1])
-                    if pe_bypass_config["input_fifo_bypass"][node][pe_input_num] == 1:
+                    if pe_bypass_config["input_fifo_bypass"][node][pe_input_num] == 1 or node == self.get_source():
                         pe_num_active_fifos -= 1
-                if node in pe_bypass_config["output_fifo_bypass"]:
+                if node in pe_bypass_config["output_fifo_bypass"] or node == self.get_destination():
                     pe_num_active_fifos -= 1
-                if node in pe_bypass_config["prim_outfifo_bypass"]:
+                if node in pe_bypass_config["prim_outfifo_bypass"] or node == self.get_destination():
                     pe_num_active_fifos -= 1
                 pe_fifo_count += pe_num_active_fifos
         self.pe_fifo_count = pe_fifo_count
@@ -87,6 +95,8 @@ class ReconvergenceGroup:
         self.destination = destination
         self.paths = paths
         self.max_fifo_count = 0  # to be computed later
+        self.broadcast_edges = set()
+        self.join_edges = set()
 
     def add_path(self, path):
         self.paths.append(path)
@@ -102,6 +112,18 @@ class ReconvergenceGroup:
 
     def set_max_fifo_count(self, count):
         self.max_fifo_count = count
+
+    def add_broadcast_edge(self, edge):
+        self.broadcast_edges.add(edge)
+
+    def add_join_edge(self, edge):
+        self.join_edges.add(edge)
+
+    def get_broadcast_edges(self):
+        return self.broadcast_edges
+
+    def get_join_edges(self):
+        return self.join_edges
 
 class Node:
     def __init__(self, name):
@@ -246,13 +268,145 @@ def find_start_and_end_nodes(graph):
     return start_nodes, end_nodes
 
 
-def find_all_paths(graph):
+
+
+def find_start_and_end_nodes_intra_graph(graph):
+    """
+    Finds:
+      - Start nodes: nodes with no incoming edges OR multiple outgoing edges
+      - End nodes: nodes with no outgoing edges OR multiple incoming edges
+
+    Graph format: dict[node] = [(next_node, edge_name), ...]
+    """
+
+    # --- Step 1: Gather node sets ---
+    all_nodes = set(graph.keys())
+    all_successors = {dst for edges in graph.values() for (dst, _) in edges}
+    all_nodes |= all_successors  # include all nodes that appear as targets
+
+    # --- Step 2: Count incoming and outgoing edges ---
+    in_degree = defaultdict(int)
+    out_degree = defaultdict(int)
+
+    for src, edges in graph.items():
+        out_degree[src] += len(edges)
+        for (dst, _) in edges:
+            in_degree[dst] += 1
+
+    # Ensure every node appears in both degree dicts
+    for n in all_nodes:
+        in_degree.setdefault(n, 0)
+        out_degree.setdefault(n, 0)
+
+    # --- Step 3: Identify node sets ---
+    start_nodes = {n for n in all_nodes if in_degree[n] == 0 or out_degree[n] > 1}
+    end_nodes   = {n for n in all_nodes if out_degree[n] == 0 or in_degree[n] > 1}
+
+    return start_nodes, end_nodes
+
+# def find_start_and_end_nodes_intra_graph(graph):
+#     """
+#     Finds:
+#       - Start nodes:
+#           * Nodes with no incoming edges
+#           * Nodes with multiple outgoing edges
+#           * Nodes with multiple incoming edges AND at least one outgoing edge
+#       - End nodes:
+#           * Nodes with no outgoing edges
+#           * Nodes with multiple incoming edges
+
+#     The graph is an adjacency dictionary where values are lists of (next_node, edge_name) tuples.
+#     """
+#     # Gather all nodes (both keys and successors)
+#     all_nodes = set(graph.keys())
+#     all_successors = {dst for edges in graph.values() for (dst, _) in edges}
+#     all_nodes |= all_successors
+
+#     # Compute in-degree and out-degree
+#     in_degree = {node: 0 for node in all_nodes}
+#     out_degree = {node: 0 for node in all_nodes}
+
+#     for src, edges in graph.items():
+#         out_degree[src] += len(edges)
+#         for (dst, _) in edges:
+#             in_degree[dst] += 1
+
+#     # Define start and end sets
+#     start_nodes = {
+#         n for n in all_nodes
+#         if in_degree[n] == 0
+#         or out_degree[n] > 1
+#         or (in_degree[n] > 1 and out_degree[n] > 0)
+#     }
+
+#     end_nodes = {
+#         n for n in all_nodes
+#         if out_degree[n] == 0 or in_degree[n] > 1
+#     }
+
+#     return start_nodes, end_nodes
+
+
+def find_all_paths(graph, intra_graph_effort=0):
     """
     Finds all possible paths from every start node to every end node.
     Each path is returned as a Path instance containing (node, edge_name) tuples,
     with the final node having edge_name == None.
     """
-    start_nodes, end_nodes = find_start_and_end_nodes(graph)
+    if intra_graph_effort == 0:
+        start_nodes, end_nodes = find_start_and_end_nodes(graph)
+    elif intra_graph_effort == 1:
+        start_nodes, end_nodes = find_start_and_end_nodes_intra_graph(graph)
+    else:
+        raise ValueError("intra_graph_effort must be 0 or 1.")
+
+    # Print start and end nodes
+    print("Start nodes found:", start_nodes)
+    print("End nodes found:", end_nodes)
+    all_paths = []
+
+    def dfs(current_node, this_end, path_obj: Path):
+        # If this node has no outgoing edges (end node)
+        if current_node == this_end:
+            path_obj.add_node_edge(current_node, None)
+            path_obj.update_interconnect_fifo_count()
+            all_paths.append(path_obj)
+            return
+
+        for (neighbor, edge_name) in graph[current_node]:
+            # Copy current path and extend with this hop
+            new_nodes_edges = list(path_obj.get_nodes_edges())
+            new_path = Path(new_nodes_edges)
+            new_path.add_node_edge(current_node, edge_name)
+            dfs(neighbor, this_end, new_path)
+
+    for start in start_nodes:
+        for this_end in end_nodes:
+            if start == this_end:
+                continue
+            print(f"Finding paths from {start} to {this_end}...")
+            dfs(start, this_end, Path([]))
+
+
+    return all_paths
+
+
+def find_all_paths_saved(graph, intra_graph_effort=0):
+    """
+    Finds all possible paths from every start node to every end node.
+    Each path is returned as a Path instance containing (node, edge_name) tuples,
+    with the final node having edge_name == None.
+    """
+    if intra_graph_effort == 0:
+        start_nodes, end_nodes = find_start_and_end_nodes(graph)
+    elif intra_graph_effort == 1:
+        start_nodes, end_nodes = find_start_and_end_nodes_intra_graph(graph)
+    else:
+        raise ValueError("intra_graph_effort must be 0 or 1.")
+
+    # Print start and end nodes
+    print("Start nodes found:", start_nodes)
+    print("End nodes found:", end_nodes)
     all_paths = []
 
     def dfs(current_node, path_obj: Path):
@@ -271,7 +425,15 @@ def find_all_paths(graph):
             dfs(neighbor, new_path)
 
     for start in start_nodes:
+        # Remove this node from the end nodes
+        node_removed = False
+        if start in end_nodes:
+            node_removed = True
+            end_nodes.remove(start)
         dfs(start, Path([]))
+        # Re-add the node to end nodes if it was removed
+        if node_removed:
+            end_nodes.add(start)
 
     return all_paths
 
@@ -298,10 +460,9 @@ def closest_sum(target_sum, choices, effort_level):
 
 
 
-def get_io_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id_to_name=None, pe_bypass_config=None, edge_dict=None):
+def get_io_reconvergence_groups(all_paths, E64_mode=False, Multi_bank_mode=False, id_to_name=None, pe_bypass_config=None, edge_dict=None):
     """
-    Finds all paths from inputs to outputs in the given graph.
-    Each path is represented as a list of (node, edge_name) tuples.
+    Finds io reconvergence groups from the provided paths.
     """
 
     if Multi_bank_mode:
@@ -314,8 +475,6 @@ def get_io_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id
     # Create empty list of ReconvergenceGroups
     reconvergence_groups = []
 
-    all_paths = find_all_paths(graph)
-
     for path in all_paths:
         path.update_interconnect_fifo_count()
         path.update_pe_count()
@@ -326,6 +485,10 @@ def get_io_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id
         # Treat all MU I/Os as the same source
         if path_source.startswith("U") or path_source.startswith("V"):
             path_source = "MU"
+
+        # # FIXME: Temporary HACK to skip GLB inputs
+        # else:
+        #     continue
 
         # Group I/Os using same GLB tile in E64 or Multi-bank mode
         # Handle input I/Os
@@ -351,19 +514,154 @@ def get_io_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id
                 path_destination = f"GLB_output_group_{destination_lane_idx // 4}"
 
         # Check if there is an existing reconvergence group with this source, destination pair
+        # TODO: Also check that there is no edge overlap for outputs (i.e. going into destinatiion)
+        # TODO: And there MUST be edge overlap for inputs (if it's not an I/O tile or MU I/O) (i.e. coming from source)
+        source_is_IO_tile = path_source.startswith("GLB_input_group_") or path_source == "MU" or path_source.startswith("I")
         for group in reconvergence_groups:
-            if group.get_source() == path_source and group.get_destination() == path_destination:
+            enforced_input_edge_overlap = path.nodes_edges[0][1] in group.get_broadcast_edges()
+            if group.get_source() == path_source and group.get_destination() == path_destination and (source_is_IO_tile or enforced_input_edge_overlap):
+                if not(source_is_IO_tile):
+                    # if len(group.get_broadcast_edges()) != 1:
+                    #     breakpoint()
+                    assert len(group.get_broadcast_edges()) == 1, "There should only be one broadcast edge in the group."
+
+                # if not(path.nodes_edges[-2][1] in group.get_join_edges()):    # Ensure no edge overlap for outputs (i.e. going into destination)
+                #     group.get_paths().append(path)
+                #     # Add join edge
+                #     group.add_join_edge(path.nodes_edges[-2][1])
+                #     # Add broadcast edge
+                #     group.add_broadcast_edge(path.nodes_edges[0][1])
+                #     break
+
+
                 group.get_paths().append(path)
+                # Add join edge
+                group.add_join_edge(path.nodes_edges[-2][1])
+                # Add broadcast edge
+                group.add_broadcast_edge(path.nodes_edges[0][1])
                 break
         else:
             # If not, create a new group
             new_reconvergence_group = ReconvergenceGroup(path_source, path_destination, [path])
+            # Add broadcast edge
+            new_reconvergence_group.add_broadcast_edge(path.nodes_edges[0][1])
+            # Add join edge
+            new_reconvergence_group.add_join_edge(path.nodes_edges[-2][1])
             reconvergence_groups.append(new_reconvergence_group)
 
+    # Trim reconvergence groups with only one path
+    reconvergence_groups = [group for group in reconvergence_groups if len(group.get_paths()) > 1]
     return reconvergence_groups
 
 
-def get_inter_graph_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id_to_name=None):
+def reconvergence_group_greater_than(rg1: ReconvergenceGroup, rg2: ReconvergenceGroup):
+    """
+    Returns true if rg1 is "greater than" rg2, meaning that rg2 is contained within rg1.
+    """
+    rg2_source = rg2.get_source()
+    rg2_dest = rg2.get_destination()
+
+    for path in rg1.get_paths():
+        if (rg2_source in path.get_nodes() and rg2_source != path.get_source()) \
+        or (rg2_dest in path.get_nodes() and rg2_dest != path.get_destination()):
+                print(f"  Reconvergence Group from {rg2_source} to {rg2_dest} is inside Reconvergence Group from {rg1.get_source()} to {rg1.get_destination()}.")
+                return True
+
+    return False
+
+
+def key_contained_in_rg_to_left(key, arr, j):
+    for i in range(j, -1, -1):
+        if reconvergence_group_greater_than(arr[i], key):
+            return True
+    return False
+
+
+def insertion_sort_reconvergence_groups(arr):
+    # Traverse from the second element to the end
+    for i in range(1, len(arr)):
+        key = arr[i]          # Element to be inserted
+        j = i - 1
+
+        # Move elements of arr[0..i-1], that are greater than key,
+        # one position ahead to make space for the key
+
+        # Greater than key means that the key reconvergence group is inside the arr[j] reconvergence group
+        # while j >= 0 and arr[j] > key:
+        # while j >= 0 and reconvergence_group_greater_than(arr[j], key):
+        while j >= 0 and key_contained_in_rg_to_left(key, arr, j):
+            arr[j + 1] = arr[j]
+            j -= 1
+
+        # Place the key in its correct position
+        arr[j + 1] = key
+
+def merge_sort_reconvergence_groups(arr):
+    # Base case: a list of 0 or 1 elements is already sorted
+    if len(arr) <= 1:
+        return arr
+
+    # Split the list into two halves
+    mid = len(arr) // 2
+    left_half = merge_sort_reconvergence_groups(arr[:mid])
+    right_half = merge_sort_reconvergence_groups(arr[mid:])
+
+    # Merge the sorted halves
+    return merge_rg(left_half, right_half)
+
+
+def merge_rg(left, right):
+    """Merge two sorted lists into one sorted list."""
+    merged = []
+    i = j = 0
+    # breakpoint()
+
+    # Compare elements from both halves and pick the smaller one
+    while i < len(left) and j < len(right):
+        left_rg_inside_right_rg = False
+        left_source = left[i].get_source()
+        left_dest = left[i].get_destination()
+
+        # Debugging
+        # if left[i].get_destination() == "GLB_output_group_1":
+        #     breakpoint()
+
+
+        # Check if left_source or dest is in right[j]'s paths nodes
+        for rpath in right[j].get_paths():
+            if (left_source in rpath.get_nodes() and left_source != rpath.get_source()) \
+            or (left_dest in rpath.get_nodes() and left_dest != rpath.get_destination()):
+                    print(f"  Reconvergence Group from {left_source} to {left_dest} is inside Reconvergence Group from {right[j].get_source()} to {right[j].get_destination()}.")
+                    # breakpoint()
+                    left_rg_inside_right_rg = True
+                    break
+        # left_rg_inside_right_rg = left[i] <= right[j]
+
+        if left_rg_inside_right_rg: # TODO Need to change this condition
+            merged.append(left[i])
+            i += 1
+        else:
+            merged.append(right[j])
+            j += 1
+
+    # Add remaining elements from both halves
+    merged.extend(left[i:])
+    merged.extend(right[j:])
+
+    return merged
+
+
+def append_reconvergence_group_position_metadata(reconvergence_group, parent_child_node_info):
+    # Compute source distance_to_graph_source
+    source_node = reconvergence_group.get_source()
+    dist_to_source = 0
+    dest_node = reconvergence_group.get_destination()
+    dist_to_dest = 0
+
+
+
+
+def get_intra_graph_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id_to_name=None):
     raise NotImplementedError("This function is not yet implemented.")
 
 
@@ -411,7 +709,7 @@ def update_path_balance_metadata(path_balance_metadata, path, parent_child_node_
     path.update_pond_behavioral_fifo_count(path_balance_metadata)
 
 
-def balance_io_reconvergence_groups(reconvergence_groups, parent_child_node_info, id_to_name, total_stream_length=1568, effort_level=1, mu2glb_only=False):
+def balance_io_reconvergence_groups(reconvergence_groups, parent_child_node_info, id_to_name, total_stream_length=1568, effort_level=1, mu_source_only=False):
     path_balance_metadata = {
         "balance_lengths": {},
         "total_stream_lengths": {},
@@ -433,10 +731,10 @@ def balance_io_reconvergence_groups(reconvergence_groups, parent_child_node_info
 
     # Balance each reconvergence group
     for group in reconvergence_groups:
-        if mu2glb_only:
+        if mu_source_only:
             # Only balance MU to GLB groups
-            if not (group.get_source() == "MU" and group.get_destination().startswith("GLB")):
-                print(f"  Skipping reconvergence group from {group.get_source()} to {group.get_destination()} (not MU to GLB).")
+            if not (group.get_source() == "MU"):
+                print(f"  Skipping reconvergence group from {group.get_source()} to {group.get_destination()} (not MU source).")
                 continue
         print(f"Balancing Reconvergence Group from {group.get_source()} to {group.get_destination()}:")
         all_paths = group.get_paths()
@@ -494,12 +792,14 @@ if __name__ == "__main__":
         default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design_post_pipe_compressed.packed",
         help="Output compressed design packed file"
     )
+    parser.add_argument("-e", "--intra_graph_effort", type=int, default=1, help="Effort level for intra-graph path balancing")
     args = parser.parse_args()
 
     adjacency = build_adjacency(args.input_design_post_pipe_packed)
     edge_dict = build_edge_dict(args.input_design_packed)
     parent_child_node_info = build_parent_child_node_info(adjacency)
-    paths = find_all_paths(adjacency)
+
+    paths = find_all_paths(adjacency, args.intra_graph_effort)
     for p in paths:
         p.print_path()
 
@@ -512,7 +812,26 @@ if __name__ == "__main__":
     pe_bypass_config = json.load(open(args.pe_bypass_config, 'r'))
 
     # Get I/O reconvergence groups
-    io_reconvergence_groups = get_io_reconvergence_groups(adjacency, E64_mode=True, Multi_bank_mode=True, id_to_name=id_to_name, pe_bypass_config=pe_bypass_config, edge_dict=edge_dict)
+    io_reconvergence_groups = get_io_reconvergence_groups(paths, E64_mode=True, Multi_bank_mode=True, id_to_name=id_to_name, pe_bypass_config=pe_bypass_config, edge_dict=edge_dict)
+
+    for n, group in enumerate(io_reconvergence_groups, start=1):
+        print(f"I/O Reconvergence Group {n}:")
+        print(f"Source: {group.get_source()}, Destination: {group.get_destination()}, Number of paths: {len(group.get_paths())}")
+        print("-----")
+        # Print paths in the group
+        for path in group.get_paths():
+            path.print_path()
+        print("=====")
+
+
+    # TODO: Need to reorder the reconverge groups so we balance the innermost ones first
+    # io_reconvergence_groups = merge_sort_reconvergence_groups(io_reconvergence_groups)
+    insertion_sort_reconvergence_groups(io_reconvergence_groups)
+
+    print("-----")
+    print("After sorting reconvergence groups:")
+    print("-----")
+
     for n, group in enumerate(io_reconvergence_groups, start=1):
         print(f"I/O Reconvergence Group {n}:")
         print(f"Source: {group.get_source()}, Destination: {group.get_destination()}, Number of paths: {len(group.get_paths())}")
@@ -524,20 +843,9 @@ if __name__ == "__main__":
 
 
     # Balance the reconvergence groups (returns path balancing metadata). Also prints out the balancing info.
-    balancing_metadata = balance_io_reconvergence_groups(io_reconvergence_groups, parent_child_node_info, id_to_name, total_stream_length=1568, effort_level=2, mu2glb_only=True)
+    balancing_metadata = balance_io_reconvergence_groups(io_reconvergence_groups, parent_child_node_info, id_to_name, total_stream_length=1568, effort_level=2, mu_source_only=True)
 
     with open(f"path_balancing.json", "w") as f:
         import json
 
         json.dump(balancing_metadata, f, indent=4)
-
-
-    # Test the closest sum function
-    # choices = [2, 4, 7, 8, 14, 16]
-
-    # print(closest_sum(8, choices, effort_level=1))
-    # print(closest_sum(10, choices, effort_level=1))
-    # print(closest_sum(10, choices, effort_level=2))
-    # print(closest_sum(11, choices, effort_level=2))
-    # print(closest_sum(13, choices, effort_level=2))
-    # print(closest_sum(13, choices, effort_level=3))
