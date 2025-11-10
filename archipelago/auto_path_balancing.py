@@ -7,6 +7,16 @@ import json
 import re
 
 
+
+def find_pe_input_num_from_driving_edge(pe_node, edge_dict, driving_edge):
+    for node in edge_dict[driving_edge]:
+        if node[0] == pe_node:
+            pe_input_num = int(node[1].split("PE_input_width_17_num_")[1])
+            return pe_input_num
+
+    raise ValueError(f"Could not find PE input num for PE node {pe_node} from driving edge {driving_edge}.")
+
+
 class Path:
     def __init__(self, nodes_edges=[]):
         self.nodes_edges = nodes_edges  # list of (node, edge_name) tuples
@@ -15,7 +25,7 @@ class Path:
         self.pond_behavioral_fifo_count = 0
         self.pe_fifo_count = 0
         self.total_fifo_count = 0
-        self.pe_count = 0
+        self.open_pe_count = 0
 
     def add_node_edge(self, node, edge_name):
         self.nodes_edges.append((node, edge_name))
@@ -49,12 +59,28 @@ class Path:
     def set_pond_behavioral_fifo_count(self, count):
         self.pond_behavioral_fifo_count = count
 
-    def update_pond_behavioral_fifo_count(self, path_balance_metadata):
+    def update_pond_behavioral_fifo_count(self, path_balance_metadata, edge_dict):
         total_pond_fifos = 0
-        for node, edge in self.nodes_edges:
+        for i in range(len(self.nodes_edges)):
+            node, edge = self.nodes_edges[i]
             if node.startswith("p"):
                 if node in path_balance_metadata["balance_lengths"]:
-                    total_pond_fifos += path_balance_metadata["balance_lengths"][node]
+
+                    # PE-to-pond: simply add the balance length
+                    if path_balance_metadata["pe_to_pond"][node][0] == True:
+                        total_pond_fifos += path_balance_metadata["balance_lengths"][node]
+                    # Pond-to-PE: only add the balance length is this path is using the corresponding PE input port
+                    else:
+                        if i > 0:
+                            driving_edge = self.nodes_edges[i-1][1]
+                        else:
+                            raise ValueError("PE node is at the start of the path. Pond-to-PE is not possible. Please fix.")
+
+                        pe_input_num = find_pe_input_num_from_driving_edge(node, edge_dict, driving_edge)
+                        path_balance_metadata_pe_input_num = int(path_balance_metadata["pe_to_pond"][node][1].split("data")[1])
+                        if pe_input_num == path_balance_metadata_pe_input_num:
+                            total_pond_fifos += path_balance_metadata["balance_lengths"][node]
+
         self.pond_behavioral_fifo_count = total_pond_fifos
 
     def update_interconnect_fifo_count(self):
@@ -66,14 +92,19 @@ class Path:
     # Do not count PE input FIFOs if PE is source
     def update_pe_fifo_count(self, pe_bypass_config, edge_dict):
         pe_fifo_count = 0
-        for node, edge in self.nodes_edges:
+        for i in range(len(self.nodes_edges)):
+            node, edge = self.nodes_edges[i]
             if node.startswith("p"):
                 pe_num_active_fifos = 3
                 # Handle this based on which specific input FIFOs are bypassed
                 if node in pe_bypass_config["input_fifo_bypass"] or node == self.get_source():
-                    pe_input_num = int(edge_dict[edge][1][1].split("PE_input_width_17_num_")[1])
-                    if pe_bypass_config["input_fifo_bypass"][node][pe_input_num] == 1 or node == self.get_source():
+                    if node == self.get_source():
                         pe_num_active_fifos -= 1
+                    else:
+                        driving_edge = self.nodes_edges[i-1][1]
+                        pe_input_num = find_pe_input_num_from_driving_edge(node, edge_dict, driving_edge)
+                        if pe_bypass_config["input_fifo_bypass"][node][pe_input_num] == 1:
+                            pe_num_active_fifos -= 1
                 if node in pe_bypass_config["output_fifo_bypass"] or node == self.get_destination():
                     pe_num_active_fifos -= 1
                 if node in pe_bypass_config["prim_outfifo_bypass"] or node == self.get_destination():
@@ -81,12 +112,15 @@ class Path:
                 pe_fifo_count += pe_num_active_fifos
         self.pe_fifo_count = pe_fifo_count
 
-    def get_pe_count(self):
-        return self.pe_count
+    def get_open_pe_count(self):
+        return self.open_pe_count
 
-    def update_pe_count(self):
-        pe_count = sum(1 for node, edge in self.nodes_edges if node.startswith("p"))
-        self.pe_count = pe_count
+    def update_open_pe_count(self, path_balance_metadata=None):
+        if path_balance_metadata is None:
+            open_pe_count = sum(1 for node, edge in self.nodes_edges if node.startswith("p"))
+        else:
+            open_pe_count = sum(1 for node, edge in self.nodes_edges if node.startswith("p") and node not in path_balance_metadata["balance_lengths"])
+        self.open_pe_count = open_pe_count
 
 
 class ReconvergenceGroup:
@@ -113,6 +147,16 @@ class ReconvergenceGroup:
     def set_max_fifo_count(self, count):
         self.max_fifo_count = count
 
+    def update_max_fifo_count(self):
+        max_fifo_count = 0
+        all_paths = self.get_paths()
+        for path in all_paths:
+            reg_count = path.get_total_fifo_count()
+            if reg_count > max_fifo_count:
+                max_fifo_count = reg_count
+        self.set_max_fifo_count(max_fifo_count)
+        print(f"Reconvergence Group from {self.get_source()} to {self.get_destination()} has max fifo count: {max_fifo_count}")
+
     def add_broadcast_edge(self, edge):
         self.broadcast_edges.add(edge)
 
@@ -124,6 +168,12 @@ class ReconvergenceGroup:
 
     def get_join_edges(self):
         return self.join_edges
+
+    def get_total_available_pes(self):
+        total_available_pes = 0
+        for path in self.get_paths():
+            total_available_pes += path.get_open_pe_count()
+        return total_available_pes
 
 class Node:
     def __init__(self, name):
@@ -304,48 +354,6 @@ def find_start_and_end_nodes_intra_graph(graph):
 
     return start_nodes, end_nodes
 
-# def find_start_and_end_nodes_intra_graph(graph):
-#     """
-#     Finds:
-#       - Start nodes:
-#           * Nodes with no incoming edges
-#           * Nodes with multiple outgoing edges
-#           * Nodes with multiple incoming edges AND at least one outgoing edge
-#       - End nodes:
-#           * Nodes with no outgoing edges
-#           * Nodes with multiple incoming edges
-
-#     The graph is an adjacency dictionary where values are lists of (next_node, edge_name) tuples.
-#     """
-#     # Gather all nodes (both keys and successors)
-#     all_nodes = set(graph.keys())
-#     all_successors = {dst for edges in graph.values() for (dst, _) in edges}
-#     all_nodes |= all_successors
-
-#     # Compute in-degree and out-degree
-#     in_degree = {node: 0 for node in all_nodes}
-#     out_degree = {node: 0 for node in all_nodes}
-
-#     for src, edges in graph.items():
-#         out_degree[src] += len(edges)
-#         for (dst, _) in edges:
-#             in_degree[dst] += 1
-
-#     # Define start and end sets
-#     start_nodes = {
-#         n for n in all_nodes
-#         if in_degree[n] == 0
-#         or out_degree[n] > 1
-#         or (in_degree[n] > 1 and out_degree[n] > 0)
-#     }
-
-#     end_nodes = {
-#         n for n in all_nodes
-#         if out_degree[n] == 0 or in_degree[n] > 1
-#     }
-
-#     return start_nodes, end_nodes
-
 
 def find_all_paths(graph, intra_graph_effort=0):
     """
@@ -391,53 +399,6 @@ def find_all_paths(graph, intra_graph_effort=0):
     return all_paths
 
 
-def find_all_paths_saved(graph, intra_graph_effort=0):
-    """
-    Finds all possible paths from every start node to every end node.
-    Each path is returned as a Path instance containing (node, edge_name) tuples,
-    with the final node having edge_name == None.
-    """
-    if intra_graph_effort == 0:
-        start_nodes, end_nodes = find_start_and_end_nodes(graph)
-    elif intra_graph_effort == 1:
-        start_nodes, end_nodes = find_start_and_end_nodes_intra_graph(graph)
-    else:
-        raise ValueError("intra_graph_effort must be 0 or 1.")
-
-    # Print start and end nodes
-    print("Start nodes found:", start_nodes)
-    print("End nodes found:", end_nodes)
-    all_paths = []
-
-    def dfs(current_node, path_obj: Path):
-        # If this node has no outgoing edges (end node)
-        if current_node in end_nodes or current_node not in graph:
-            path_obj.add_node_edge(current_node, None)
-            path_obj.update_interconnect_fifo_count()
-            all_paths.append(path_obj)
-            return
-
-        for (neighbor, edge_name) in graph[current_node]:
-            # Copy current path and extend with this hop
-            new_nodes_edges = list(path_obj.get_nodes_edges())
-            new_path = Path(new_nodes_edges)
-            new_path.add_node_edge(current_node, edge_name)
-            dfs(neighbor, new_path)
-
-    for start in start_nodes:
-        # Remove this node from the end nodes
-        node_removed = False
-        if start in end_nodes:
-            node_removed = True
-            end_nodes.remove(start)
-        dfs(start, Path([]))
-        # Re-add the node to end nodes if it was removed
-        if node_removed:
-            end_nodes.add(start)
-
-    return all_paths
-
-
 def closest_sum(target_sum, choices, effort_level):
     best_combo = None
     best_diff = float('inf')
@@ -471,16 +432,19 @@ def get_io_reconvergence_groups(all_paths, E64_mode=False, Multi_bank_mode=False
     if E64_mode or Multi_bank_mode:
         assert id_to_name is not None, "id_to_name mapping must be provided in E64 or Multi-bank mode."
 
-
     # Create empty list of ReconvergenceGroups
     reconvergence_groups = []
 
     for path in all_paths:
         path.update_interconnect_fifo_count()
-        path.update_pe_count()
+        path.update_open_pe_count()
         path.update_pe_fifo_count(pe_bypass_config, edge_dict)
         path_source = path.get_source()
         path_destination = path.get_destination()
+
+        # Ignore paths with MEM tiles in the middle
+        if any(node.startswith("M") or node.startswith("m") for node in path.get_nodes()[1:-1]):
+            continue
 
         # Treat all MU I/Os as the same source
         if path_source.startswith("U") or path_source.startswith("V"):
@@ -521,18 +485,7 @@ def get_io_reconvergence_groups(all_paths, E64_mode=False, Multi_bank_mode=False
             enforced_input_edge_overlap = path.nodes_edges[0][1] in group.get_broadcast_edges()
             if group.get_source() == path_source and group.get_destination() == path_destination and (source_is_IO_tile or enforced_input_edge_overlap):
                 if not(source_is_IO_tile):
-                    # if len(group.get_broadcast_edges()) != 1:
-                    #     breakpoint()
                     assert len(group.get_broadcast_edges()) == 1, "There should only be one broadcast edge in the group."
-
-                # if not(path.nodes_edges[-2][1] in group.get_join_edges()):    # Ensure no edge overlap for outputs (i.e. going into destination)
-                #     group.get_paths().append(path)
-                #     # Add join edge
-                #     group.add_join_edge(path.nodes_edges[-2][1])
-                #     # Add broadcast edge
-                #     group.add_broadcast_edge(path.nodes_edges[0][1])
-                #     break
-
 
                 group.get_paths().append(path)
                 # Add join edge
@@ -554,6 +507,35 @@ def get_io_reconvergence_groups(all_paths, E64_mode=False, Multi_bank_mode=False
     return reconvergence_groups
 
 
+
+def is_ordered_subsequence(sub, full):
+    it = iter(full)
+    return all(x in it for x in sub)
+
+
+def reconvergence_group_greater_than_search_paths(rg1: ReconvergenceGroup, rg2: ReconvergenceGroup):
+    """
+    Returns true if rg1 is "greater than" rg2, meaning that rg2 is contained within rg1.
+    Containement is defined as all paths in rg2 being fully contained within at least one path in rg1.
+    """
+    rg2_paths = rg2.get_paths()
+    rg1_paths = rg1.get_paths()
+
+
+    for rg2_path in rg2_paths:
+        # Check if rg2_path is contained within any of the rg1 paths. If there is any rg2path that is not fully contained within rg1's paths, just return false
+        this_rg2_path_contained_in_rg1 = False
+        for rg1_path in rg1_paths:
+            rg2_without_dest_nodes_edges = rg2_path.get_nodes_edges()[:-1]  # exclude destination node because the outgoing edge is None for rg2_path
+            if rg2_path.get_destination() in rg1_path.get_nodes() and is_ordered_subsequence(rg2_without_dest_nodes_edges, rg1_path.get_nodes_edges()):
+                this_rg2_path_contained_in_rg1 = True
+                break
+        if not this_rg2_path_contained_in_rg1:
+            return False
+
+    print(f"  Reconvergence Group from {rg2.get_source()} to {rg2.get_destination()} is inside Reconvergence Group from {rg1.get_source()} to {rg1.get_destination()}.")
+    return True
+
 def reconvergence_group_greater_than(rg1: ReconvergenceGroup, rg2: ReconvergenceGroup):
     """
     Returns true if rg1 is "greater than" rg2, meaning that rg2 is contained within rg1.
@@ -572,10 +554,15 @@ def reconvergence_group_greater_than(rg1: ReconvergenceGroup, rg2: Reconvergence
 
 def key_contained_in_rg_to_left(key, arr, j):
     for i in range(j, -1, -1):
-        if reconvergence_group_greater_than(arr[i], key):
+        if reconvergence_group_greater_than_search_paths(arr[i], key):
             return True
     return False
 
+def rg_to_left_has_more_available_pes(key, arr, j):
+    for i in range(j, -1, -1):
+        if arr[i].get_total_available_pes() > key.get_total_available_pes():
+            return True
+    return False
 
 def insertion_sort_reconvergence_groups(arr):
     # Traverse from the second element to the end
@@ -583,6 +570,9 @@ def insertion_sort_reconvergence_groups(arr):
         key = arr[i]          # Element to be inserted
         j = i - 1
 
+        # Check if key destination is p5
+        # if key.get_destination() == "p5":
+        #     breakpoint()
         # Move elements of arr[0..i-1], that are greater than key,
         # one position ahead to make space for the key
 
@@ -593,111 +583,54 @@ def insertion_sort_reconvergence_groups(arr):
             arr[j + 1] = arr[j]
             j -= 1
 
+        # Containment met. Now keep moving so groups with fewer total available PEs are to the left of groups with more available PEs
+        while j >= 0 and rg_to_left_has_more_available_pes(key, arr, j):
+            arr[j + 1] = arr[j]
+            j -= 1
+
+        # Check if key destination is p5
+        if key.get_destination() == "p5":
+            print(f"P5 initially placed at position {j+1} during insertion sort. Current left RGs:")
+            for z in range(j+1):
+                print(f"  Left RG {arr[z].get_source()} -> {arr[z].get_destination()}")
+            # breakpoint()
         # Place the key in its correct position
         arr[j + 1] = key
 
-def merge_sort_reconvergence_groups(arr):
-    # Base case: a list of 0 or 1 elements is already sorted
-    if len(arr) <= 1:
-        return arr
 
-    # Split the list into two halves
-    mid = len(arr) // 2
-    left_half = merge_sort_reconvergence_groups(arr[:mid])
-    right_half = merge_sort_reconvergence_groups(arr[mid:])
-
-    # Merge the sorted halves
-    return merge_rg(left_half, right_half)
-
-
-def merge_rg(left, right):
-    """Merge two sorted lists into one sorted list."""
-    merged = []
-    i = j = 0
-    # breakpoint()
-
-    # Compare elements from both halves and pick the smaller one
-    while i < len(left) and j < len(right):
-        left_rg_inside_right_rg = False
-        left_source = left[i].get_source()
-        left_dest = left[i].get_destination()
-
-        # Debugging
-        # if left[i].get_destination() == "GLB_output_group_1":
-        #     breakpoint()
-
-
-        # Check if left_source or dest is in right[j]'s paths nodes
-        for rpath in right[j].get_paths():
-            if (left_source in rpath.get_nodes() and left_source != rpath.get_source()) \
-            or (left_dest in rpath.get_nodes() and left_dest != rpath.get_destination()):
-                    print(f"  Reconvergence Group from {left_source} to {left_dest} is inside Reconvergence Group from {right[j].get_source()} to {right[j].get_destination()}.")
-                    # breakpoint()
-                    left_rg_inside_right_rg = True
-                    break
-        # left_rg_inside_right_rg = left[i] <= right[j]
-
-        if left_rg_inside_right_rg: # TODO Need to change this condition
-            merged.append(left[i])
-            i += 1
-        else:
-            merged.append(right[j])
-            j += 1
-
-    # Add remaining elements from both halves
-    merged.extend(left[i:])
-    merged.extend(right[j:])
-
-    return merged
-
-
-def append_reconvergence_group_position_metadata(reconvergence_group, parent_child_node_info):
-    # Compute source distance_to_graph_source
-    source_node = reconvergence_group.get_source()
-    dist_to_source = 0
-    dest_node = reconvergence_group.get_destination()
-    dist_to_dest = 0
-
-
-
-
-def get_intra_graph_reconvergence_groups(graph, E64_mode=False, Multi_bank_mode=False, id_to_name=None):
-    raise NotImplementedError("This function is not yet implemented.")
-
-
-def update_path_balance_metadata(path_balance_metadata, path, parent_child_node_info, fifo_deficit, total_stream_length, id_to_name, effort_level):
+def update_path_balance_metadata(path_balance_metadata, path, parent_child_node_info, edge_dict, fifo_deficit, total_stream_length, id_to_name, effort_level):
     balance_length_choices = []
     MAX_BALANCE_LENGTH = 16
-    for i in range(2, MAX_BALANCE_LENGTH + 1):  # check only factors between 2 and 16
+    # for i in range(2, MAX_BALANCE_LENGTH + 1):  # check only factors between 2 and 16
+    for i in range(1, MAX_BALANCE_LENGTH + 1):  # check only factors between 1 and 16
         if total_stream_length % i == 0:
             balance_length_choices.append(i)
 
     chosen_balance_lengths = closest_sum(fifo_deficit, balance_length_choices, effort_level)
 
-    # Update path metadata with info about added ponds
-    # curr_path_behavioral_fifo_count = path.get_pond_behavioral_fifo_count()
-    # path.set_pond_behavioral_fifo_count(curr_path_behavioral_fifo_count + sum(chosen_balance_lengths))
 
     # add the ponds with chosen balance lengths to the path, starting from the destination
     num_ponds_added = 0
-    for node, edge in reversed(path.get_nodes_edges()):
+    reversed_path = list(reversed(path.get_nodes_edges()))
+    for i in range(len(reversed_path)):
+        node, edge = reversed_path[i]
         if node.startswith("p"):
-
-
 
             if node in path_balance_metadata["balance_lengths"]:
                 continue  # Already added pond here. Can't add multiple ponds to same PE
 
-            # TODO: Also need to check if the PE has multiple inputs. If so, just skip it for now
-            # The condition is really if multiple lanes converge into the same PE
-            if len(parent_child_node_info[node].parents) > 1:
-                continue  # skip this PE
+            if path.get_destination() == node:
+                driving_edge = reversed_path[i+1][1]
+                pe_input_num = find_pe_input_num_from_driving_edge(node, edge_dict, driving_edge)
+                pe_data_port_name = f"data{pe_input_num}"
+                path_balance_metadata["pe_to_pond"][node] = (False, pe_data_port_name)
+            else:
+                path_balance_metadata["pe_to_pond"][node] = (True, "")
 
             path_balance_metadata["balance_lengths"][node] = chosen_balance_lengths[num_ponds_added]
             path_balance_metadata["total_stream_lengths"][node] = total_stream_length
             node_full_name = id_to_name[node]
             path_balance_metadata["name_to_id"][node_full_name] = node
-            path_balance_metadata["pe_to_pond"][node] = True # assume true for now
             num_ponds_added += 1
 
             print(f"    Added pond {node} with balance length {chosen_balance_lengths[num_ponds_added-1]}")
@@ -706,10 +639,11 @@ def update_path_balance_metadata(path_balance_metadata, path, parent_child_node_
             break
 
     # Update path metadata with info about added ponds
-    path.update_pond_behavioral_fifo_count(path_balance_metadata)
+    path.update_pond_behavioral_fifo_count(path_balance_metadata, edge_dict)
+    path.update_open_pe_count(path_balance_metadata)
 
 
-def balance_io_reconvergence_groups(reconvergence_groups, parent_child_node_info, id_to_name, total_stream_length=1568, effort_level=1, mu_source_only=False):
+def balance_io_reconvergence_groups(reconvergence_groups, parent_child_node_info, edge_dict, id_to_name, total_stream_length=1568, effort_level=1, mu_source_only=False):
     path_balance_metadata = {
         "balance_lengths": {},
         "total_stream_lengths": {},
@@ -719,15 +653,7 @@ def balance_io_reconvergence_groups(reconvergence_groups, parent_child_node_info
 
     # Find max fifo count across all paths in all reconvergence groups
     for group in reconvergence_groups:
-        max_fifo_count = 0
-        all_paths = group.get_paths()
-        for path in all_paths:
-            reg_count = path.get_total_fifo_count()
-            if reg_count > max_fifo_count:
-                max_fifo_count = reg_count
-        group.set_max_fifo_count(max_fifo_count)
-        print(f"Reconvergence Group from {group.get_source()} to {group.get_destination()} has max fifo count: {max_fifo_count}")
-
+        group.update_max_fifo_count()
 
     # Balance each reconvergence group
     for group in reconvergence_groups:
@@ -740,20 +666,23 @@ def balance_io_reconvergence_groups(reconvergence_groups, parent_child_node_info
         all_paths = group.get_paths()
         for path in all_paths:
             # Update path metadata with info about added ponds
-            path.update_pond_behavioral_fifo_count(path_balance_metadata)
+            path.update_pond_behavioral_fifo_count(path_balance_metadata, edge_dict)
+            path.update_open_pe_count(path_balance_metadata)
             path_fifo_count = path.get_total_fifo_count()
+
             fifo_deficit = group.max_fifo_count - path_fifo_count
             if fifo_deficit > 0:
                 print(f"  Path from {path.get_source()} to {path.get_destination()} has fifo count {path_fifo_count}, needs {fifo_deficit} more FIFOs.")
-                # Here, implement logic to insert FIFOs into the path as needed
-                # This is a placeholder for actual balancing logic
-                actual_effort_level = min(effort_level, path.get_pe_count())
-                update_path_balance_metadata(path_balance_metadata, path, parent_child_node_info, fifo_deficit, total_stream_length, id_to_name, actual_effort_level)
-
-                # TODO: Need to update fifo count here based on ponds that were just added
-                # Need some way of conveying info about ponds that have already been added
+                if path.get_open_pe_count() == 0:
+                    print(f"\033[93mWARNING: Path from {path.get_source()} to {path.get_destination()} in RG from {group.get_source()} to {group.get_destination()} has no open PEs to insert ponds into. Skipping balancing for this path, though it needs {fifo_deficit} more FIFOs.\033[0m")
+                    continue
+                actual_effort_level = min(effort_level, path.get_open_pe_count())
+                update_path_balance_metadata(path_balance_metadata, path, parent_child_node_info, edge_dict, fifo_deficit, total_stream_length, id_to_name, actual_effort_level)
             else:
                 print(f"  Path from {path.get_source()} to {path.get_destination()} is already balanced with fifo count {path_fifo_count}.")
+
+            group.update_max_fifo_count()
+            print(f"  RG from {group.get_source()} to {group.get_destination()} has new max fifo count {group.max_fifo_count}.")
 
 
     return path_balance_metadata
@@ -765,31 +694,31 @@ if __name__ == "__main__":
     parser.add_argument(
         "-i", "--input_design_packed",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design.packed",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_saved_unroll4_no_ep_no_E64/design.packed",
         help="Input design packed file"
     )
     parser.add_argument(
         "-p", "--input_design_post_pipe_packed",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design_post_pipe.packed",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_saved_unroll4_no_ep_no_E64/design_post_pipe.packed",
         help="Input design packed file"
     )
     parser.add_argument(
         "-d", "--id_to_name",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design.id_to_name",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_saved_unroll4_no_ep_no_E64/design.id_to_name",
         help="Input id_to_name mapping file"
     )
     parser.add_argument(
         "-b", "--pe_bypass_config",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/pe_id_to_fifo_bypass_config.json",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_saved_unroll4_no_ep_no_E64/pe_id_to_fifo_bypass_config.json",
         help="Input PE bypass configuration file"
     )
     parser.add_argument(
         "-o", "--output_design_packed",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin_saved/design_post_pipe_compressed.packed",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_saved_unroll4_no_ep_no_E64/design_post_pipe_compressed.packed",
         help="Output compressed design packed file"
     )
     parser.add_argument("-e", "--intra_graph_effort", type=int, default=1, help="Effort level for intra-graph path balancing")
@@ -812,7 +741,10 @@ if __name__ == "__main__":
     pe_bypass_config = json.load(open(args.pe_bypass_config, 'r'))
 
     # Get I/O reconvergence groups
-    io_reconvergence_groups = get_io_reconvergence_groups(paths, E64_mode=True, Multi_bank_mode=True, id_to_name=id_to_name, pe_bypass_config=pe_bypass_config, edge_dict=edge_dict)
+    # io_reconvergence_groups = get_io_reconvergence_groups(paths, E64_mode=True, Multi_bank_mode=True, id_to_name=id_to_name, pe_bypass_config=pe_bypass_config, edge_dict=edge_dict)
+
+    # For maxpooling
+    io_reconvergence_groups = get_io_reconvergence_groups(paths, E64_mode=False, Multi_bank_mode=False, id_to_name=id_to_name, pe_bypass_config=pe_bypass_config, edge_dict=edge_dict)
 
     for n, group in enumerate(io_reconvergence_groups, start=1):
         print(f"I/O Reconvergence Group {n}:")
@@ -843,7 +775,11 @@ if __name__ == "__main__":
 
 
     # Balance the reconvergence groups (returns path balancing metadata). Also prints out the balancing info.
-    balancing_metadata = balance_io_reconvergence_groups(io_reconvergence_groups, parent_child_node_info, id_to_name, total_stream_length=1568, effort_level=2, mu_source_only=True)
+    # balancing_metadata = balance_io_reconvergence_groups(io_reconvergence_groups, parent_child_node_info, edge_dict, id_to_name, total_stream_length=1568, effort_level=2, mu_source_only=True)
+
+    # For maxpooling
+    # NOTE: App stream length = 58x58x32. For unroll by 4, stream length per lane = 26912
+    balancing_metadata = balance_io_reconvergence_groups(io_reconvergence_groups, parent_child_node_info, edge_dict, id_to_name, total_stream_length=1024, effort_level=2, mu_source_only=False)
 
     with open(f"path_balancing.json", "w") as f:
         import json
