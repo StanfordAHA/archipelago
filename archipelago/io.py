@@ -155,7 +155,6 @@ def _generate_visualization_from_packed(packed_file, output_basename, label_edge
                 graph.node(source, color=colors.get(source[0], "black"), label=source_label)
             else:
                 graph.node(source, color=colors.get(source[0], "black"))
-            # breakpoint()
 
             # The rest are destinations, if any
             dest_parts = remainder.split("\t")[1:]
@@ -406,31 +405,88 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
     #   If multiple complete sources exist, try to match the branch's first SB value with any SB node
     #   in a complete segment; if found, use that complete segment's first node.
     for net_id, segments in route_nets.items():
+        new_segments = segments.copy()
         complete_sources = []
-        for seg in segments:
+        complete_source_indices = []
+        for i in range(len(segments)):
+            seg = segments[i]
             if seg and seg[0][0] in ('reg','port'):
-                complete_sources.append(seg[0])
+                complete_sources.append(seg)
+                complete_source_indices.append(i)
+
         if len(complete_sources) == 1:
-            source_node = complete_sources[0]
+            parent_handled = False
+            first_branch_child = True
             for seg in segments:
                 if seg and seg[0][0] == 'SB':
-                    seg.insert(0, source_node)
-        elif len(complete_sources) > 1:
-            for seg in segments:
-                if seg and seg[0][0] == 'SB':
+                    if first_branch_child:
+                        first_branch_child = False
+                        new_segments.clear()
+
                     branch_key = seg[0][1]
-                    matched_source = None
-                    for comp_seg in segments:
-                        if comp_seg and comp_seg[0][0] in ('reg','port'):
-                            # Check if any SB node in the complete segment matches branch_key.
-                            if any(node[0]=='SB' and node[1]==branch_key for node in comp_seg):
-                                matched_source = comp_seg[0]
-                                break
-                    if matched_source:
-                        seg.insert(0, matched_source)
+
+                    # Source path is complete_sources[0] up to branch_key
+                    source_path = complete_sources[0]
+                    for i, node in enumerate(source_path):
+                        if node[0] == 'SB' and node[1] == branch_key:
+                            new_child_path = source_path[i-1:]
+                            source_path = source_path[:i]
+                            break
                     else:
-                        # Fall back to first complete source.
-                        seg.insert(0, complete_sources[0])
+                        raise RuntimeError("Could not find matching SB node in complete source")
+
+                    # Prepend the branching point to child paths
+                    seg.insert(0, source_path[-1])
+
+                    # We have modified the original parent segment to stop at the branching point. We also add a new segment to the rest of original parent segment
+                    new_segments.append(seg)
+                    if not parent_handled:
+                        new_segments.append(new_child_path)
+                        new_segments.append(source_path)
+                        parent_handled = True
+
+            route_nets[net_id] = new_segments
+
+        elif len(complete_sources) > 1:
+            # breakpoint()
+            # print("More than 1 complete source")
+            parents_handled = [False] * len(complete_sources)
+            first_branch_child = True
+            for seg in segments:
+                if seg and seg[0][0] == 'SB':
+                    if first_branch_child:
+                        first_branch_child = False
+                        new_segments.clear()
+                    branch_key = seg[0][1]
+                    matched_source_index = None
+
+                    for i in range(len(complete_sources)):
+                        comp_seg = complete_sources[i]
+                        # Check if any SB node in the complete segment matches branch_key.
+                        if any(node[0]=='SB' and node[1]==branch_key for node in comp_seg):
+                            matched_source_index = i
+                            break
+
+                    if matched_source_index is None:
+                        matched_source_index = 0 # Fall back to first complete source.
+
+                    source_path = complete_sources[matched_source_index]
+                    for i, node in enumerate(source_path):
+                        if node[0] == 'SB' and node[1] == branch_key:
+                            new_child_path = source_path[i-1:]
+                            source_path = source_path[:i]
+                            break
+                    else:
+                        raise RuntimeError("Could not find matching SB node in complete source")
+
+                    # Prepend the branching point to child paths
+                    seg.insert(0, source_path[-1])
+
+                    new_segments.append(seg)
+                    if not parents_handled[matched_source_index]:
+                        new_segments.append(new_child_path)
+                        new_segments.append(source_path)
+                        parents_handled[matched_source_index] = True
 
     ## Convert each segment's chain into adjacency pairs
     # Only include valid nodes from REG or PORT; skip SB nodes.
@@ -479,20 +535,29 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate visualization from design packed file.")
-    parser.add_argument(
-        "-i", "--input_design_packed",
-        type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed",
-        help="Input design packed file"
-    )
-    parser.add_argument(
-        "-o", "--output_pdf",
-        type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed",
-        help="Output PDF file base name (without .pdf extension)"
-    )
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description="Generate visualization from design packed file.")
+    # parser.add_argument(
+    #     "-i", "--input_design_packed",
+    #     type=str,
+    #     default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin/design_post_pipe_compressed.packed",
+    #     help="Input design packed file"
+    # )
+    # parser.add_argument(
+    #     "-o", "--output_pdf",
+    #     type=str,
+    #     default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin/design_post_pipe_compressed",
+    #     help="Output PDF file base name (without .pdf extension)"
+    # )
+    # args = parser.parse_args()
 
-    print(f"Generating visualization from {args.input_design_packed}. The result is placed at {args.output_pdf}.pdf")
-    _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
+    # print(f"Generating visualization from {args.input_design_packed}. The result is placed at {args.output_pdf}.pdf")
+    # _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
+
+
+    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/"
+    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.place"
+    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.route"
+    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_new.packed"
+    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_compressed_new.packed"
+    generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True)
+
