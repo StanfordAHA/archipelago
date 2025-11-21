@@ -226,6 +226,20 @@ def dump_meta_file(halide_src, app_name, cwd):
             ext = '.pgm'
         f.write(f"output=gold{ext}\n")
 
+
+def add_unique_path(path, new_segments):
+    def is_sublist(a, b):
+        n, m = len(a), len(b)
+        return any(a == b[i:i+n] for i in range(m - n + 1))
+
+    for existing_path in new_segments:
+        if is_sublist(path, existing_path):
+            return
+
+        if is_sublist(existing_path, path):
+            new_segments.remove(existing_path)
+    new_segments.append(path)
+
 def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True):
     """
     Generate design packed file from design.place and design.route.
@@ -415,7 +429,6 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                 complete_source_indices.append(i)
 
         if len(complete_sources) == 1:
-            parent_handled = False
             first_branch_child = True
             for seg in segments:
                 if seg and seg[0][0] == 'SB':
@@ -427,30 +440,38 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
 
                     # Source path is complete_sources[0] up to branch_key
                     source_path = complete_sources[0]
-                    for i, node in enumerate(source_path):
-                        if node[0] == 'SB' and node[1] == branch_key:
-                            new_child_path = source_path[i-1:]
-                            source_path = source_path[:i]
-                            break
-                    else:
-                        raise RuntimeError("Could not find matching SB node in complete source")
+                    paths_to_try_matching = [source_path]
+                    # Add all other segments that are not "seg" to paths_to_try_matching
+                    for i in range(len(segments)):
+                        if segments[i] is not seg:
+                            paths_to_try_matching.append(segments[i])
 
-                    # Prepend the branching point to child paths
+                    # Try to find the matching SB node in any of the paths_to_try_matching
+                    matched = False
+                    for path in paths_to_try_matching:
+                        try:
+                            source_path = path
+                            for i, node in enumerate(source_path):
+                                if node[0] == 'SB' and node[1] == branch_key:
+                                    new_child_path = source_path[i-1:]
+                                    source_path = source_path[:i]
+                                    raise StopIteration
+                        except StopIteration:
+                            matched = True
+                            break
+
+                    assert matched, "Could not find matching SB node in any source"
+
                     seg.insert(0, source_path[-1])
 
                     # We have modified the original parent segment to stop at the branching point. We also add a new segment to the rest of original parent segment
-                    new_segments.append(seg)
-                    if not parent_handled:
-                        new_segments.append(new_child_path)
-                        new_segments.append(source_path)
-                        parent_handled = True
+                    add_unique_path(seg, new_segments)
+                    add_unique_path(new_child_path, new_segments)
+                    add_unique_path(source_path, new_segments)
 
             route_nets[net_id] = new_segments
 
         elif len(complete_sources) > 1:
-            # breakpoint()
-            # print("More than 1 complete source")
-            parents_handled = [False] * len(complete_sources)
             first_branch_child = True
             for seg in segments:
                 if seg and seg[0][0] == 'SB':
@@ -471,28 +492,44 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                         matched_source_index = 0 # Fall back to first complete source.
 
                     source_path = complete_sources[matched_source_index]
-                    for i, node in enumerate(source_path):
-                        if node[0] == 'SB' and node[1] == branch_key:
-                            new_child_path = source_path[i-1:]
-                            source_path = source_path[:i]
+
+                    paths_to_try_matching = [source_path]
+                    # Add all other segments that are not "seg" to paths_to_try_matching
+                    for i in range(len(segments)):
+                        if segments[i] is not seg:
+                            paths_to_try_matching.append(segments[i])
+
+                    # Try to find the matching SB node in any of the paths_to_try_matching
+                    matched = False
+                    for path in paths_to_try_matching:
+                        try:
+                            source_path = path
+                            for i, node in enumerate(source_path):
+                                if node[0] == 'SB' and node[1] == branch_key:
+                                    new_child_path = source_path[i-1:]
+                                    source_path = source_path[:i]
+                                    raise StopIteration
+                        except StopIteration:
+                            matched = True
                             break
-                    else:
-                        raise RuntimeError("Could not find matching SB node in complete source")
+
+                    assert matched, "Could not find matching SB node in any source"
+
 
                     # Prepend the branching point to child paths
                     seg.insert(0, source_path[-1])
 
-                    new_segments.append(seg)
-                    if not parents_handled[matched_source_index]:
-                        new_segments.append(new_child_path)
-                        new_segments.append(source_path)
-                        parents_handled[matched_source_index] = True
+                    add_unique_path(seg, new_segments)
+                    add_unique_path(new_child_path, new_segments)
+                    add_unique_path(source_path, new_segments)
+
+            route_nets[net_id] = new_segments
 
     ## Convert each segment's chain into adjacency pairs
     # Only include valid nodes from REG or PORT; skip SB nodes.
     adjacency_netlists = {}
     for net_id, segments in route_nets.items():
-        net_pairs = []
+        net_pairs = set()
         for segment in segments:
             valid_nodes = [node for node in segment if node[0] in ('reg','port')]
             if len(valid_nodes) < 2:
@@ -501,8 +538,8 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                 # Now valid_nodes[i] is e.g. ('reg', (block_id, block_name))
                 _, (left_id, left_name) = valid_nodes[i]
                 _, (right_id, right_name) = valid_nodes[i+1]
-                net_pairs.append(((left_id, left_name), (right_id, right_name)))
-        adjacency_netlists[net_id] = net_pairs
+                net_pairs.add(((left_id, left_name), (right_id, right_name)))
+        adjacency_netlists[net_id] = list(net_pairs)
 
     ## Write out design packed file
     with open(new_packed_file, 'w') as f:
@@ -554,10 +591,10 @@ if __name__ == "__main__":
     # _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
 
 
-    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/"
-    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.place"
-    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.route"
-    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_new.packed"
-    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_compressed_new.packed"
+    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/"
+    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design.place"
+    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design.route"
+    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design_post_pipe_new.packed"
+    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design_post_pipe_compressed_new.packed"
     generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True)
 
