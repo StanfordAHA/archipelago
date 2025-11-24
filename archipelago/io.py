@@ -422,20 +422,17 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
         new_segments = segments.copy()
         complete_sources = []
         complete_source_indices = []
+
         for i in range(len(segments)):
             seg = segments[i]
             if seg and seg[0][0] in ('reg','port'):
                 complete_sources.append(seg)
                 complete_source_indices.append(i)
 
+
         if len(complete_sources) == 1:
-            first_branch_child = True
             for seg in segments:
                 if seg and seg[0][0] == 'SB':
-                    if first_branch_child:
-                        first_branch_child = False
-                        new_segments.clear()
-
                     branch_key = seg[0][1]
 
                     # Source path is complete_sources[0] up to branch_key
@@ -455,6 +452,13 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                                 if node[0] == 'SB' and node[1] == branch_key:
                                     new_child_path = source_path[i-1:]
                                     source_path = source_path[:i]
+
+                                    # Remove old paths before adding new ones
+                                    if seg in new_segments:
+                                        new_segments.remove(seg)
+                                    if source_path in new_segments:
+                                        new_segments.remove(source_path)
+
                                     raise StopIteration
                         except StopIteration:
                             matched = True
@@ -465,19 +469,16 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                     seg.insert(0, source_path[-1])
 
                     # We have modified the original parent segment to stop at the branching point. We also add a new segment to the rest of original parent segment
-                    add_unique_path(seg, new_segments)
+                    # add_unique_path(seg, new_segments)
                     add_unique_path(new_child_path, new_segments)
                     add_unique_path(source_path, new_segments)
+                add_unique_path(seg, new_segments)
 
             route_nets[net_id] = new_segments
 
         elif len(complete_sources) > 1:
-            first_branch_child = True
             for seg in segments:
                 if seg and seg[0][0] == 'SB':
-                    if first_branch_child:
-                        first_branch_child = False
-                        new_segments.clear()
                     branch_key = seg[0][1]
                     matched_source_index = None
 
@@ -508,6 +509,13 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                                 if node[0] == 'SB' and node[1] == branch_key:
                                     new_child_path = source_path[i-1:]
                                     source_path = source_path[:i]
+
+                                    # Remove old paths before adding new ones
+                                    if seg in new_segments:
+                                        new_segments.remove(seg)
+                                    if source_path in new_segments:
+                                        new_segments.remove(source_path)
+
                                     raise StopIteration
                         except StopIteration:
                             matched = True
@@ -519,9 +527,10 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                     # Prepend the branching point to child paths
                     seg.insert(0, source_path[-1])
 
-                    add_unique_path(seg, new_segments)
+                    # add_unique_path(seg, new_segments)
                     add_unique_path(new_child_path, new_segments)
                     add_unique_path(source_path, new_segments)
+                add_unique_path(seg, new_segments)
 
             route_nets[net_id] = new_segments
 
@@ -591,10 +600,10 @@ if __name__ == "__main__":
     # _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
 
 
-    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/"
-    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design.place"
-    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design.route"
-    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design_post_pipe_new.packed"
-    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/tests/fp_comp/bin/design_post_pipe_compressed_new.packed"
+    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/"
+    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.place"
+    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.route"
+    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_new.packed"
+    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_compressed_new.packed"
     generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True)
 
