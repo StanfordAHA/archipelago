@@ -450,6 +450,9 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                             source_path = path
                             for i, node in enumerate(source_path):
                                 if node[0] == 'SB' and node[1] == branch_key:
+                                    if i == 0:
+                                        # This means the source_path itself is a branch; skip it.
+                                        continue
                                     new_child_path = source_path[i-1:]
                                     source_path = source_path[:i]
 
@@ -507,6 +510,9 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                             source_path = path
                             for i, node in enumerate(source_path):
                                 if node[0] == 'SB' and node[1] == branch_key:
+                                    if i == 0:
+                                        # This means the source_path itself is a branch; skip it.
+                                        continue
                                     new_child_path = source_path[i-1:]
                                     source_path = source_path[:i]
 
@@ -600,10 +606,10 @@ if __name__ == "__main__":
     # _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
 
 
-    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/"
-    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.place"
-    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design.route"
-    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_new.packed"
-    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin/design_post_pipe_compressed_new.packed"
+    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/"
+    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design.place"
+    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design.route"
+    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design_post_pipe_new.packed"
+    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design_post_pipe_compressed_new.packed"
     generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True)
 
