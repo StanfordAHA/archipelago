@@ -789,23 +789,60 @@ def update_path_balance_metadata(path_balance_metadata, path, parent_child_node_
 
     print(f"    Considering PEs for pond placement (after sorting): {pes_to_consider}")
 
-    # Building a smarter list of PEs to traverse
-    for node in pes_to_consider:
-        if path.get_destination() == node:
-            driving_edge = reversed_path[i+1][1]
-            pe_input_num = find_pe_input_num_from_driving_edge(node, edge_dict, driving_edge)
-            pe_data_port_name = f"data{pe_input_num}"
-            path_balance_metadata["pe_to_pond"][node] = (False, pe_data_port_name)
-        else:
-            path_balance_metadata["pe_to_pond"][node] = (True, "")
+    # # Building a smarter list of PEs to traverse
+    # for node in pes_to_consider:
+    #     if path.get_destination() == node:
+    #         for i in range(len(reversed_path)):
+    #             if reversed_path[i][0] == node:
+    #                 break
+    #         driving_edge = reversed_path[i+1][1]
+    #         pe_input_num = find_pe_input_num_from_driving_edge(node, edge_dict, driving_edge)
+    #         pe_data_port_name = f"data{pe_input_num}"
+    #         path_balance_metadata["pe_to_pond"][node] = (False, pe_data_port_name)
+    #     else:
+    #         path_balance_metadata["pe_to_pond"][node] = (True, "")
 
-        path_balance_metadata["balance_lengths"][node] = chosen_balance_lengths[num_ponds_added]
-        path_balance_metadata["total_stream_lengths"][node] = total_stream_length
-        node_full_name = id_to_name[node]
-        path_balance_metadata["name_to_id"][node_full_name] = node
-        num_ponds_added += 1
+    #     path_balance_metadata["balance_lengths"][node] = chosen_balance_lengths[num_ponds_added]
+    #     path_balance_metadata["total_stream_lengths"][node] = total_stream_length
+    #     node_full_name = id_to_name[node]
+    #     path_balance_metadata["name_to_id"][node_full_name] = node
+    #     num_ponds_added += 1
 
-        print(f"    Added pond {node} with balance length {chosen_balance_lengths[num_ponds_added-1]}")
+    #     print(f"    Added pond {node} with balance length {chosen_balance_lengths[num_ponds_added-1]}")
+
+    #     if num_ponds_added == len(chosen_balance_lengths):
+    #         break
+
+     # TODO: Build a smarter list of PEs to traverse
+    for i in range(len(reversed_path)):
+        node, edge = reversed_path[i]
+        if node.startswith("p"):
+            if node in path_balance_metadata["balance_lengths"]:
+                continue  # Already added pond here. No revisiting of PEs that have already been assigned ponds.
+
+            if disallow_use_of_seen_pes and node in seen_pes:
+                print(f"    Skipping pond {node} because it is in the seen_pes set.")
+                continue
+
+            if legal_pond_pes is not None and node not in legal_pond_pes:
+                print(f"    Skipping pond {node} because it is not in the legal_pond_pes set.")
+                continue
+
+            if path.get_destination() == node:
+                driving_edge = reversed_path[i+1][1]
+                pe_input_num = find_pe_input_num_from_driving_edge(node, edge_dict, driving_edge)
+                pe_data_port_name = f"data{pe_input_num}"
+                path_balance_metadata["pe_to_pond"][node] = (False, pe_data_port_name)
+            else:
+                path_balance_metadata["pe_to_pond"][node] = (True, "")
+
+            path_balance_metadata["balance_lengths"][node] = chosen_balance_lengths[num_ponds_added]
+            path_balance_metadata["total_stream_lengths"][node] = total_stream_length
+            node_full_name = id_to_name[node]
+            path_balance_metadata["name_to_id"][node_full_name] = node
+            num_ponds_added += 1
+
+            print(f"    Added pond {node} with balance length {chosen_balance_lengths[num_ponds_added-1]}")
 
         if num_ponds_added == len(chosen_balance_lengths):
             break
@@ -919,25 +956,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "-i", "--input_design_packed",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_e64/design.packed",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_v2/design.packed",
         help="Input design packed file"
     )
     parser.add_argument(
         "-p", "--input_design_post_pipe_packed",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_e64/design_post_pipe.packed",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_v2/design_post_pipe.packed",
         help="Input design packed file"
     )
     parser.add_argument(
         "-d", "--id_to_name",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_e64/design.id_to_name",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_v2/design.id_to_name",
         help="Input id_to_name mapping file"
     )
     parser.add_argument(
         "-b", "--pe_bypass_config",
         type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_e64/pe_id_to_fifo_bypass_config.json",
+        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/maxpooling_dense_rv_fp/bin_v2/pe_id_to_fifo_bypass_config.json",
         help="Input PE bypass configuration file"
     )
     parser.add_argument("-e", "--intra_graph_effort", type=int, default=1, help="Effort level for intra-graph path balancing")
