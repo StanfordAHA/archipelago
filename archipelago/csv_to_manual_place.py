@@ -1,3 +1,5 @@
+"Script to extract manual place from CSV layout."
+
 import csv
 import re
 
@@ -22,46 +24,48 @@ def extract_layout_positions(csv_path, output_path):
     # Origin = top-left IO tile
     origin_r, origin_c = min(io_positions)
 
-    # Regexes
-    pat_pe_only = re.compile(r"^\s*[pP](\d+)\s*$")
-    pat_pe_rf   = re.compile(r"^\s*[pP](\d+)\s*,\s*[rR](\d+)\s*$")
-    pat_mem     = re.compile(r"^\s*m(\d+)\s*$")  # <-- case-sensitive
+    # --- Generalized regex patterns ---
+    # PEs: p[num], case-insensitive
+    pat_pe  = re.compile(r"[pP](\d+)")
+
+    # Registers: r[num], case-insensitive
+    pat_reg = re.compile(r"[rR](\d+)")
+
+    # MEMs: m[num], *case-sensitive*
+    pat_mem = re.compile(r"m(\d+)")
 
     results = []
 
-    # --- Scan each cell ---
+    # --- Scan grid and extract ALL matching elements ---
     for r, row in enumerate(grid):
         for c, cell in enumerate(row):
             if not isinstance(cell, str):
                 continue
+
             text = cell.strip()
 
-            # Case 1: P[num] (case-insensitive)
-            m = pat_pe_only.match(text)
-            if m:
-                x = c - origin_c
-                y = r - origin_r
-                results.append((f"p{m.group(1)}", x, y))
-                continue
+            # Find *all* occurrences in the cell
+            pes  = pat_pe.findall(text)
+            regs = pat_reg.findall(text)
+            mems = pat_mem.findall(text)
 
-            # Case 2: P[num], r[num] (case-insensitive)
-            m = pat_pe_rf.match(text)
-            if m:
-                pe = f"p{m.group(1)}"
-                rf = f"r{m.group(2)}"
-                x = c - origin_c
-                y = r - origin_r
-                results.append((pe, x, y))
-                results.append((rf, x, y))
-                continue
+            if not (pes or regs or mems):
+                continue  # no elements in this cell
 
-            # Case 3: m[num] (case-sensitive)
-            m = pat_mem.match(text)
-            if m:
-                x = c - origin_c
-                y = r - origin_r
-                results.append((f"m{m.group(1)}", x, y))
-                continue
+            x = c - origin_c
+            y = r - origin_r
+
+            # Append all PEs
+            for pe_num in pes:
+                results.append((f"p{pe_num}", x, y))
+
+            # Append all Registers
+            for reg_num in regs:
+                results.append((f"r{reg_num}", x, y))
+
+            # Append all MEMs
+            for mem_num in mems:
+                results.append((f"m{mem_num}", x, y))
 
     # --- Write output file ---
     with open(output_path, "w") as f:
