@@ -155,7 +155,6 @@ def _generate_visualization_from_packed(packed_file, output_basename, label_edge
                 graph.node(source, color=colors.get(source[0], "black"), label=source_label)
             else:
                 graph.node(source, color=colors.get(source[0], "black"))
-            # breakpoint()
 
             # The rest are destinations, if any
             dest_parts = remainder.split("\t")[1:]
@@ -226,6 +225,20 @@ def dump_meta_file(halide_src, app_name, cwd):
         else:
             ext = '.pgm'
         f.write(f"output=gold{ext}\n")
+
+
+def add_unique_path(path, new_segments):
+    def is_sublist(a, b):
+        n, m = len(a), len(b)
+        return any(a == b[i:i+n] for i in range(m - n + 1))
+
+    for existing_path in new_segments:
+        if is_sublist(path, existing_path):
+            return
+
+        if is_sublist(existing_path, path):
+            new_segments.remove(existing_path)
+    new_segments.append(path)
 
 def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True):
     """
@@ -406,37 +419,132 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
     #   If multiple complete sources exist, try to match the branch's first SB value with any SB node
     #   in a complete segment; if found, use that complete segment's first node.
     for net_id, segments in route_nets.items():
+        new_segments = segments.copy()
         complete_sources = []
-        for seg in segments:
+        complete_source_indices = []
+
+        for i in range(len(segments)):
+            seg = segments[i]
             if seg and seg[0][0] in ('reg','port'):
-                complete_sources.append(seg[0])
+                complete_sources.append(seg)
+                complete_source_indices.append(i)
+
+
         if len(complete_sources) == 1:
-            source_node = complete_sources[0]
             for seg in segments:
                 if seg and seg[0][0] == 'SB':
-                    seg.insert(0, source_node)
+                    branch_key = seg[0][1]
+
+                    # Source path is complete_sources[0] up to branch_key
+                    source_path = complete_sources[0]
+                    paths_to_try_matching = [source_path]
+                    # Add all other segments that are not "seg" to paths_to_try_matching
+                    for i in range(len(segments)):
+                        if segments[i] is not seg:
+                            paths_to_try_matching.append(segments[i])
+
+                    # Try to find the matching SB node in any of the paths_to_try_matching
+                    matched = False
+                    for path in paths_to_try_matching:
+                        try:
+                            source_path = path
+                            for i, node in enumerate(source_path):
+                                if node[0] == 'SB' and node[1] == branch_key:
+                                    if i == 0:
+                                        # This means the source_path itself is a branch; skip it.
+                                        continue
+                                    new_child_path = source_path[i-1:]
+                                    source_path = source_path[:i]
+
+                                    # Remove old paths before adding new ones
+                                    if seg in new_segments:
+                                        new_segments.remove(seg)
+                                    if source_path in new_segments:
+                                        new_segments.remove(source_path)
+
+                                    raise StopIteration
+                        except StopIteration:
+                            matched = True
+                            break
+
+                    assert matched, "Could not find matching SB node in any source"
+
+                    seg.insert(0, source_path[-1])
+
+                    # We have modified the original parent segment to stop at the branching point. We also add a new segment to the rest of original parent segment
+                    # add_unique_path(seg, new_segments)
+                    add_unique_path(new_child_path, new_segments)
+                    add_unique_path(source_path, new_segments)
+                add_unique_path(seg, new_segments)
+
+            route_nets[net_id] = new_segments
+
         elif len(complete_sources) > 1:
             for seg in segments:
                 if seg and seg[0][0] == 'SB':
                     branch_key = seg[0][1]
-                    matched_source = None
-                    for comp_seg in segments:
-                        if comp_seg and comp_seg[0][0] in ('reg','port'):
-                            # Check if any SB node in the complete segment matches branch_key.
-                            if any(node[0]=='SB' and node[1]==branch_key for node in comp_seg):
-                                matched_source = comp_seg[0]
-                                break
-                    if matched_source:
-                        seg.insert(0, matched_source)
-                    else:
-                        # Fall back to first complete source.
-                        seg.insert(0, complete_sources[0])
+                    matched_source_index = None
+
+                    for i in range(len(complete_sources)):
+                        comp_seg = complete_sources[i]
+                        # Check if any SB node in the complete segment matches branch_key.
+                        if any(node[0]=='SB' and node[1]==branch_key for node in comp_seg):
+                            matched_source_index = i
+                            break
+
+                    if matched_source_index is None:
+                        matched_source_index = 0 # Fall back to first complete source.
+
+                    source_path = complete_sources[matched_source_index]
+
+                    paths_to_try_matching = [source_path]
+                    # Add all other segments that are not "seg" to paths_to_try_matching
+                    for i in range(len(segments)):
+                        if segments[i] is not seg:
+                            paths_to_try_matching.append(segments[i])
+
+                    # Try to find the matching SB node in any of the paths_to_try_matching
+                    matched = False
+                    for path in paths_to_try_matching:
+                        try:
+                            source_path = path
+                            for i, node in enumerate(source_path):
+                                if node[0] == 'SB' and node[1] == branch_key:
+                                    if i == 0:
+                                        # This means the source_path itself is a branch; skip it.
+                                        continue
+                                    new_child_path = source_path[i-1:]
+                                    source_path = source_path[:i]
+
+                                    # Remove old paths before adding new ones
+                                    if seg in new_segments:
+                                        new_segments.remove(seg)
+                                    if source_path in new_segments:
+                                        new_segments.remove(source_path)
+
+                                    raise StopIteration
+                        except StopIteration:
+                            matched = True
+                            break
+
+                    assert matched, "Could not find matching SB node in any source"
+
+
+                    # Prepend the branching point to child paths
+                    seg.insert(0, source_path[-1])
+
+                    # add_unique_path(seg, new_segments)
+                    add_unique_path(new_child_path, new_segments)
+                    add_unique_path(source_path, new_segments)
+                add_unique_path(seg, new_segments)
+
+            route_nets[net_id] = new_segments
 
     ## Convert each segment's chain into adjacency pairs
     # Only include valid nodes from REG or PORT; skip SB nodes.
     adjacency_netlists = {}
     for net_id, segments in route_nets.items():
-        net_pairs = []
+        net_pairs = set()
         for segment in segments:
             valid_nodes = [node for node in segment if node[0] in ('reg','port')]
             if len(valid_nodes) < 2:
@@ -445,8 +553,8 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                 # Now valid_nodes[i] is e.g. ('reg', (block_id, block_name))
                 _, (left_id, left_name) = valid_nodes[i]
                 _, (right_id, right_name) = valid_nodes[i+1]
-                net_pairs.append(((left_id, left_name), (right_id, right_name)))
-        adjacency_netlists[net_id] = net_pairs
+                net_pairs.add(((left_id, left_name), (right_id, right_name)))
+        adjacency_netlists[net_id] = list(net_pairs)
 
     ## Write out design packed file
     with open(new_packed_file, 'w') as f:
@@ -479,20 +587,29 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate visualization from design packed file.")
-    parser.add_argument(
-        "-i", "--input_design_packed",
-        type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed.packed",
-        help="Input design packed file"
-    )
-    parser.add_argument(
-        "-o", "--output_pdf",
-        type=str,
-        default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_residual_relu_fp/bin/design_post_pipe_compressed",
-        help="Output PDF file base name (without .pdf extension)"
-    )
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description="Generate visualization from design packed file.")
+    # parser.add_argument(
+    #     "-i", "--input_design_packed",
+    #     type=str,
+    #     default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin/design_post_pipe_compressed.packed",
+    #     help="Input design packed file"
+    # )
+    # parser.add_argument(
+    #     "-o", "--output_pdf",
+    #     type=str,
+    #     default="/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/zircon_deq_ResReLU_quant_fp/bin/design_post_pipe_compressed",
+    #     help="Output PDF file base name (without .pdf extension)"
+    # )
+    # args = parser.parse_args()
 
-    print(f"Generating visualization from {args.input_design_packed}. The result is placed at {args.output_pdf}.pdf")
-    _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
+    # print(f"Generating visualization from {args.input_design_packed}. The result is placed at {args.output_pdf}.pdf")
+    # _generate_visualization_from_packed(args.input_design_packed, args.output_pdf)
+
+
+    cwd = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/"
+    place_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design.place"
+    route_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design.route"
+    new_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design_post_pipe_new.packed"
+    new_compressed_packed_file = "/aha/Halide-to-Hardware/apps/hardware_benchmarks/apps/get_apply_e8m0_scale_fp/bin/design_post_pipe_compressed_new.packed"
+    generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed_file, new_compressed_packed_file, visualize=True)
+
