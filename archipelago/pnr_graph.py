@@ -561,6 +561,9 @@ class RoutingResultGraph:
         tiles = self.placement[(x, y)]
 
         for tile in tiles:
+            # Add this guard to handle dangling IOs when consuming partial slices of E64
+            if tile not in self.id_to_ports:
+                continue
             if port in self.id_to_ports[tile]:
                 return tile
 
