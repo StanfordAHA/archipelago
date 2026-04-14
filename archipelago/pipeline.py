@@ -94,7 +94,12 @@ def reg_into_route(routes, g_break_node_source, new_reg_route_source):
     ), f"Couldn't find segment {g_break_node_source.to_route()} in routing file"
 
 
-def break_crit_path(graph, id_to_name, crit_path, placement, routes):
+# When defer_updates=True, we skip the expensive graph-wide bookkeeping at the
+# end of this function (rebuilding sources/sinks and re-propagating kernel
+# labels). The caller is expected to run those once after it is done making
+# many breaks in a row. Each individual break still keeps the graph consistent
+# locally, so later breaks see correct neighbors.
+def break_crit_path(graph, id_to_name, crit_path, placement, routes, defer_updates=False):
     break_idx = find_break_idx(graph, crit_path)
 
     break_node_source = crit_path[break_idx][0]
@@ -128,7 +133,7 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
 
     graph.added_regs += 1
 
-    graph.edges.remove((break_node_source, break_node_dest))
+    graph.remove_edge((break_node_source, break_node_dest))
     graph.add_node(new_reg_route_source)
     graph.add_node(new_reg_tile)
     graph.add_node(new_reg_route_dest)
@@ -142,8 +147,11 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
     placement[new_reg_tile.tile_id] = (new_reg_tile.x, new_reg_tile.y)
     id_to_name[new_reg_tile.tile_id] = f"pnr_pipelining_{graph.added_regs}@T{track}_{dir_map[side]}"
 
-    graph.update_sources_and_sinks()
-    graph.update_edge_kernels()
+    # Full graph-wide refresh. Skipped in deferred mode; the caller runs it once
+    # at the end after doing many breaks.
+    if not defer_updates:
+        graph.update_sources_and_sinks()
+        graph.update_edge_kernels()
 
     # if graph.sparse:
     if graph.split_fifos:
@@ -179,7 +187,7 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
 
         graph.added_regs += 1
 
-        graph.edges.remove((break_node_source, break_node_dest))
+        graph.remove_edge((break_node_source, break_node_dest))
         graph.add_node(new_reg_route_source)
         graph.add_node(new_reg_tile)
         graph.add_node(new_reg_route_dest)
@@ -193,8 +201,9 @@ def break_crit_path(graph, id_to_name, crit_path, placement, routes):
         placement[new_reg_tile.tile_id] = (new_reg_tile.x, new_reg_tile.y)
         id_to_name[new_reg_tile.tile_id] = f"pnr_pipelining_{graph.added_regs}@T{track}_{dir_map[side]}"
 
-        graph.update_sources_and_sinks()
-        graph.update_edge_kernels()
+        if not defer_updates:
+            graph.update_sources_and_sinks()
+            graph.update_edge_kernels()
 
 
 def break_at(graph, node1, id_to_name, placement, routing):
@@ -238,8 +247,15 @@ def break_at(graph, node1, id_to_name, placement, routing):
 
 
 def exhaustive_pipe(graph, id_to_name, placement, routing):
-    for node in graph.nodes:
-        if node in graph.get_tiles() or len(graph.sinks[node]) > 1:
+    # Try to insert a pipeline register at every eligible point in the graph.
+    # For large graphs this runs thousands of breaks, so we use the deferred
+    # mode of break_crit_path and refresh the graph-wide bookkeeping just once
+    # at the end. tile_set and initial_nodes are snapshots taken up front to
+    # keep the outer loop O(1) per iteration even as nodes are added.
+    tile_set = set(graph.get_tiles())
+    initial_nodes = list(graph.nodes)
+    for node in initial_nodes:
+        if node in tile_set or len(graph.sinks[node]) > 1:
             for sink in graph.sinks[node]:
                 path = []
                 curr_node = sink
@@ -272,6 +288,7 @@ def exhaustive_pipe(graph, id_to_name, placement, routing):
                                     path[idx : idx + 5],
                                     placement,
                                     routing,
+                                    defer_updates=True,
                                 )
                             except:
                                 verboseprint("Skip")
@@ -291,9 +308,13 @@ def exhaustive_pipe(graph, id_to_name, placement, routing):
                                     path[idx : idx + 2],
                                     placement,
                                     routing,
+                                    defer_updates=True,
                                 )
                             except:
                                 verboseprint("Skip")
+
+    graph.update_sources_and_sinks()
+    graph.update_edge_kernels()
 
 
 def add_delay_to_kernel(graph, kernel, added_delay, id_to_name, placement, routing):
