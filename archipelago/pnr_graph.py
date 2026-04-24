@@ -148,8 +148,10 @@ class TileNode:
 class RoutingResultGraph:
     def __init__(self):
         self.nodes: List[Union[RouteNode, TileNode]] = []
+        self._node_set = set()
         self.tile_id_to_tile: Dict[str, Union[RouteNode, TileNode]] = {}
         self.edges: List[(Union[RouteNode, TileNode], Union[RouteNode, TileNode])] = []
+        self._edge_set = set()
         self.edge_weights: Dict[
             (Union[RouteNode, TileNode], Union[RouteNode, TileNode]), int
         ] = {}
@@ -374,17 +376,20 @@ class RoutingResultGraph:
     def add_node(self, node):
         if node.tile_id not in self.tile_id_to_tile:
             self.nodes.append(node)
+            self._node_set.add(node)
             self.tile_id_to_tile[node.tile_id] = node
 
     def add_edge(self, node1, node2):
-        assert node1 in self.nodes, f"{node1} not in nodes"
-        assert node2 in self.nodes, f"{node2} not in nodes"
+        assert node1 in self._node_set, f"{node1} not in nodes"
+        assert node2 in self._node_set, f"{node2} not in nodes"
 
         assert isinstance(node1, TileNode) or isinstance(node1, RouteNode)
         assert isinstance(node2, TileNode) or isinstance(node2, RouteNode)
 
-        if (node1, node2) not in self.edges:
-            self.edges.append((node1, node2))
+        edge = (node1, node2)
+        if edge not in self._edge_set:
+            self.edges.append(edge)
+            self._edge_set.add(edge)
 
         if node2 not in self.sources:
             self.sources[node2] = []
@@ -406,9 +411,10 @@ class RoutingResultGraph:
             self.sources[node] = []
             self.sinks[node] = []
 
+        self._edge_set = set(self.edges)
         for source, sink in self.edges:
-            assert source in self.nodes
-            assert sink in self.nodes
+            assert source in self._node_set
+            assert sink in self._node_set
             assert isinstance(source, RouteNode) or isinstance(source, TileNode)
             assert isinstance(sink, RouteNode) or isinstance(sink, TileNode)
             self.sources[sink].append(source)
@@ -422,7 +428,7 @@ class RoutingResultGraph:
 
     def topological_sort(self):
         sys.setrecursionlimit(10**6)
-        visited = []
+        visited = set()
         stack = []
         for n in self.inputs:
             if n not in visited:
@@ -430,7 +436,7 @@ class RoutingResultGraph:
         return stack[::-1]
 
     def topological_sort_helper(self, node, stack, visited):
-        visited.append(node)
+        visited.add(node)
         for ns in self.sinks[node]:
             if ns not in visited:
                 self.topological_sort_helper(ns, stack, visited)
@@ -440,11 +446,12 @@ class RoutingResultGraph:
         node0 = edge[0]
         node1 = edge[1]
 
-        if edge in self.edges:
+        if edge in self._edge_set:
             self.edges.remove(edge)
-        if node0 in self.sources[node1]:
+            self._edge_set.discard(edge)
+        if node1 in self.sources and node0 in self.sources[node1]:
             self.sources[node1].remove(node0)
-        if node1 in self.sinks[node0]:
+        if node0 in self.sinks and node1 in self.sinks[node0]:
             self.sinks[node0].remove(node1)
 
     def is_cyclic_util(self, v, visited, rec_stack):
@@ -561,6 +568,9 @@ class RoutingResultGraph:
         tiles = self.placement[(x, y)]
 
         for tile in tiles:
+            # Add this guard to handle dangling IOs when consuming partial slices of E64
+            if tile not in self.id_to_ports:
+                continue
             if port in self.id_to_ports[tile]:
                 return tile
 
