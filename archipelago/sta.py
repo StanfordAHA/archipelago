@@ -1,4 +1,5 @@
 import os
+import re
 import copy
 import json
 import argparse
@@ -41,9 +42,9 @@ class PathComponents:
         self.rmux = rmux
         self.available_regs = available_regs
         self.parent = parent
-        self.delays = json.load(
+        self.delays = _TrackWidthFallback(json.load(
             open(os.path.dirname(os.path.realpath(__file__)) + "/sta_delays.json")
-        )
+        ))
 
     def get_total(self):
         total_dense = 0
@@ -72,6 +73,19 @@ class PathComponents:
         print("\t\tSB delay ready-valid:", self.sb_delay_rv, "ps")
         print("\t\tSB clk delay:", sum(self.sb_clk_delay), "ps")
         print("\t\tSB clk delay:", self.sb_clk_delay, "ps")
+
+
+class _TrackWidthFallback(dict):
+    """sta_delays.json has switch-box delays for 1/16/17-bit tracks only. A data track
+    of another width (lake spec data_width + 1) uses the 17-bit (else 16-bit) entry:
+    unmeasured, so treat its timing as an estimate."""
+
+    def __missing__(self, key):
+        for w in ("17", "16"):
+            alt = re.sub(r"_B\d+_", f"_B{w}_", key, count=1)
+            if alt != key and alt in self:
+                return self[alt]
+        raise KeyError(key)
 
 
 def get_mem_tile_columns(graph, mem_col_index_increment):
