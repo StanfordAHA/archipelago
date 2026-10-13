@@ -346,11 +346,12 @@ def generate_packed_from_place_and_route(cwd, place_file, route_file, new_packed
                     if len(candidates) == 1:
                         candidate_key = candidates[0]
                     else:
-                        # When multiple candidates exist, use the port name to decide:
-                        # if route_name contains "_17_", choose candidate with block_id starting with "I"
-                        # else choose candidate with block_id starting with "i".
+                        # When multiple candidates exist, use the port's width to decide:
+                        # a data port (wider than 1 bit: f2io_17_0, f2io_33, ...) is the "I"
+                        # block, a 1-bit port the "i" block. The width is the PORT line's last
+                        # field, so this holds at any track width (lake spec data_width + 1).
                         # This should only happen to output IOs.
-                        if "_17_" in route_name:
+                        if int(pm.group(4)) > 1:
                             candidate_key = next(((bid, bname) for (bid, bname) in candidates if bid.startswith("I")), None)
                         else:
                             candidate_key = next(((bid, bname) for (bid, bname) in candidates if bid.startswith("i")), None)

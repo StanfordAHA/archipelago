@@ -1,5 +1,6 @@
 import copy
 import os
+import re
 import glob
 import json
 from archipelago.pnr_graph import (
@@ -20,6 +21,10 @@ import pythunder
 
 
 verboseprint = lambda *a, **k: None
+
+# A PE tile's packed pond output 0 at any track width (the lake spec's data_width + 1,
+# or data_width on a dense-only fabric).
+POND_OUTPUT_0 = re.compile(r"PondTop_output_width_\d+_num_0")
 
 
 class bcolors:
@@ -401,7 +406,7 @@ def branch_delay_match_within_kernels(
             if (
                 isinstance(node, TileNode)
                 and node.tile_type == TileType.PE
-                and sink.port == "PondTop_output_width_17_num_0"
+                and POND_OUTPUT_0.fullmatch(sink.port or "")
             ):
                 continue
             cycles.add(c)

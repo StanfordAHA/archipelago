@@ -11,7 +11,7 @@ import os
 def find_pe_input_num_from_driving_edge(pe_node, edge_dict, driving_edge):
     for node in edge_dict[driving_edge]:
         if node[0] == pe_node:
-            pe_input_num = int(node[1].split("PE_input_width_17_num_")[1])
+            pe_input_num = int(re.fullmatch(r"PE_input_width_\d+_num_(\d+)", node[1]).group(1))
             return pe_input_num
 
     raise ValueError(f"Could not find PE input num for PE node {pe_node} from driving edge {driving_edge}.")

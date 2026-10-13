@@ -189,10 +189,10 @@ def draw_used_tracks(draw, routing_result, target_bitwidth):
                         draw_arraw_on_tile(draw, tile_x=x, tile_y=y, side=side_map[side], io=io_map[io_], track_id=track, color="Red", width=3)
 
 
-def collect_track_usage(routing_result, array_width, array_height):
+def collect_track_usage(routing_result, array_width, array_height, bit_widths=(1, 16)):
     result = {}
     # initialize the result
-    for bit_width in [1, 16]:
+    for bit_width in bit_widths:
         result[bit_width] = {}
         for x in range(array_width):
             for y in range(array_height):
@@ -282,7 +282,7 @@ def main():
     raw_routing_result = load_routing_result(route_file)
 
     # do analysis
-    track_usage = collect_track_usage(raw_routing_result, array_width, array_height)
+    track_usage = collect_track_usage(raw_routing_result, array_width, array_height, sorted(graphs))
 
     # do the 1bit and 16bit seperately
     for width, graph in graphs.items():

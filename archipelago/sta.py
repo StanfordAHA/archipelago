@@ -1,6 +1,7 @@
 import os
 import re
 import copy
+import glob
 import json
 import argparse
 import sys
@@ -76,9 +77,11 @@ class PathComponents:
 
 
 class _TrackWidthFallback(dict):
-    """sta_delays.json has switch-box delays for 1/16/17-bit tracks only. A data track
-    of another width (lake spec data_width + 1) uses the 17-bit (else 16-bit) entry:
-    unmeasured, so treat its timing as an estimate."""
+    """sta_delays.json has switch-box delays for 1/16/17-bit tracks only (its B16 and B17
+    entries are identical). A data track of another width (lake spec data_width + 1) uses
+    the 17-bit (else 16-bit) entry. Generic synthesis of the PE-tile switch box (freepdk45,
+    2026-10-12) puts B33 and B65 pass-through delay within 1% of B17 and B9 at 0.86x, so the
+    entry holds (conservative at B9). Layout wire length in the wider tiles is not in it."""
 
     def __missing__(self, key):
         for w in ("17", "16"):
@@ -453,11 +456,13 @@ def main():
         dirname = os.path.dirname(packed_file)
         graph1 = os.path.join(dirname, "1.graph")
         assert os.path.exists(graph1), route + " does not exists"
-        graph16 = os.path.join(dirname, "16.graph")
-        if not os.path.exists(graph16):
-            graph16 = os.path.join(dirname, "17.graph")
-        assert os.path.exists(graph16), route + " does not exists"
-        routing_graphs = load_graph([graph1, graph16])
+        # The data-track graph: 16/17.graph, or <data_width + 1>.graph for a lake spec fabric
+        data_graphs = [
+            g for g in glob.glob(os.path.join(dirname, "*.graph"))
+            if os.path.basename(g).split(".")[0].isdigit() and os.path.basename(g) != "1.graph"
+        ]
+        assert len(data_graphs) == 1, f"expected one data-track graph in {dirname}: {data_graphs}"
+        routing_graphs = load_graph([graph1, data_graphs[0]])
 
         visualize_pnr(routing_graphs, routing_result_graph, crit_nodes, dirname, starting_x_coord=12)
 
