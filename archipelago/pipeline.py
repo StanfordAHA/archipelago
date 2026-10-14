@@ -88,12 +88,22 @@ def find_break_idx(graph, crit_path):
 
 
 def reg_into_route(routes, g_break_node_source, new_reg_route_source):
+    # 2026-10-14: a hop can appear in several segments of its net (a segment that
+    # restarts at the net's source repeats the shared prefix). Put the register
+    # into every one of them: it used to go into the first only, so the other
+    # segment kept the unregistered path through the same RMUX, whose select
+    # then came from whichever segment the bitstream wrote last (in RV, an
+    # orphaned FIFO that fills and blocks the fork).
+    found = False
     for net_id, net in routes.items():
         for route in net:
             for idx, segment in enumerate(route):
                 if g_break_node_source.to_route() == segment:
                     route.insert(idx + 1, new_reg_route_source.to_route())
-                    return
+                    found = True
+                    break
+        if found:
+            return
     assert (
         False
     ), f"Couldn't find segment {g_break_node_source.to_route()} in routing file"
